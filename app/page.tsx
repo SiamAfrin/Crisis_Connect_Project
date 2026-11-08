@@ -28,13 +28,25 @@ const includedItems = [
     detail:
       "Server-side redirects plus role and account-status checks on every protected page.",
   },
+  {
+    title: "Responder approvals",
+    detail:
+      "Administrators review pending volunteer and rescue team registrations, including rescue category and Defence subcategory, then approve or reject them.",
+  },
+  {
+    title: "Emergency requests",
+    detail:
+      "Active victims submit requests and track review status; administrators approve or reject them, and approved requests become visible to responders.",
+  },
 ];
 
 const securityItems = [
   "Public registration cannot create administrator accounts.",
   "Volunteers and rescue team members start pending; victims start active.",
   "Pending and rejected responders cannot reach responder dashboards.",
-  "Row Level Security and column grants block direct role or status changes.",
+  "Only active administrators can approve or reject responder registrations.",
+  "Only active administrators can approve or reject emergency requests.",
+  "Row Level Security and server-side review functions block direct role, account-status, and request-status changes.",
 ];
 
 const flow = [
@@ -53,6 +65,12 @@ const flow = [
     title: "Enter the right space",
     detail:
       "Active victims and responders reach their dashboard. Pending or rejected responders see their account status.",
+  },
+  {
+    step: "04",
+    title: "Review responders and requests",
+    detail:
+      "Administrators approve or reject pending responder accounts and victim emergency requests, unlocking responder access only when approved.",
   },
 ];
 
@@ -98,7 +116,7 @@ export default function Home() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              Chunk 2 · Authentication and profiles
+              Chunk 4 · Emergency request review
             </div>
 
             <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-6xl">
@@ -106,9 +124,11 @@ export default function Home() {
             </h1>
             <p className="mt-6 max-w-2xl text-pretty text-lg leading-8 text-slate-600">
               Crisis Connect brings victims, approved volunteers, rescue teams,
-              and administrators into one accountable workflow. Chunk 2 adds
-              registration, login, logout, editable profiles, protected routes,
-              and server-side role and account-status authorization.
+              and administrators into one accountable workflow. Chunk 4 adds
+              victim emergency request submission and administrator review,
+              where approved requests become visible to active responders, on
+              top of registration, login, profiles, protected routes, responder
+              approval, and server-side role and status authorization.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -268,6 +288,12 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            <p className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+              Chunk 4 covers victim emergency requests and administrator request
+              review. Approved requests become visible to active responders;
+              assignment and acceptance remain Chunk 5 work.
+            </p>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-slate-950 p-6 text-white shadow-2xl shadow-slate-950/20 sm:p-8">
@@ -298,8 +324,8 @@ export default function Home() {
         </section>
 
         <footer className="mt-auto flex flex-col gap-2 border-t border-slate-200 py-6 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>Crisis Connect · Authentication and profiles</p>
-          <p>Chunk 2 stops before emergency request workflows.</p>
+          <p>Crisis Connect · Authentication, profiles, approvals, and requests</p>
+          <p>Chunk 4 · Emergency request review</p>
         </footer>
       </div>
     </main>

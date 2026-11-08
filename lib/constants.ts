@@ -141,3 +141,41 @@ export const EMERGENCY_SEVERITY_LABELS: Readonly<
   high: "High",
   critical: "Critical",
 };
+
+export const EMERGENCY_SEVERITY_OPTIONS: ReadonlyArray<
+  Option<AppEnums["emergency_severity"]>
+> = [
+  {
+    value: "low",
+    label: "Low",
+    description: "Limited danger with no immediate threat to life.",
+  },
+  {
+    value: "medium",
+    label: "Medium",
+    description: "Urgent help is needed but the situation is stable.",
+  },
+  {
+    value: "high",
+    label: "High",
+    description: "Serious danger that may worsen quickly.",
+  },
+  {
+    value: "critical",
+    label: "Critical",
+    description: "Immediate threat to life or large-scale impact.",
+  },
+];
+
+export const EMERGENCY_TYPE_SUGGESTIONS = [
+  "Flood",
+  "Fire",
+  "Earthquake",
+  "Building collapse",
+  "Medical emergency",
+  "Road accident",
+  "Cyclone",
+  "Landslide",
+  "Water shortage",
+  "Other",
+] as const;

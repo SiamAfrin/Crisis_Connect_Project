@@ -13,13 +13,19 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
 projects. The service role/secret key is not used by the application. Keep it
 server-only if it is ever added for administrative maintenance.
 
-## 2. Apply the initial migration
+## 2. Apply the migrations
 
-The migration is:
+Apply the migrations in filename order:
 
 ```text
 supabase/migrations/20261107000000_initial_schema.sql
+supabase/migrations/20261108000000_admin_responder_approval.sql
+supabase/migrations/20261109000000_admin_request_review.sql
 ```
+
+The first creates the schema, policies, and grants. The second adds the
+administrator responder-approval function. The third adds the administrator
+emergency-request review function.
 
 ### Option A — Supabase Dashboard
 
@@ -76,7 +82,16 @@ from pg_indexes
 where schemaname = 'public'
   and tablename in ('profiles', 'emergency_requests', 'emergency_assignments')
 order by tablename, indexname;
+
+select proname, prosecdef
+from pg_proc
+where proname in ('review_responder_account', 'review_emergency_request')
+order by proname;
 ```
+
+The result should return two rows with `prosecdef = true`, confirming that the
+administrator approval and request review functions exist and are
+`SECURITY DEFINER`.
 
 Then call the application health route:
 
@@ -111,6 +126,31 @@ intentionally blocked. A missing table still reports `migration_required`.
 - Rescue fields are `NULL` for victims, volunteers, and administrators.
 - Non-defence rescue categories must have a `NULL` defence subcategory.
 
+### `review_responder_account(target_profile_id, decision)`
+
+- `SECURITY DEFINER` function that approves or rejects a pending volunteer or
+  rescue team profile.
+- Requires an active administrator caller and a target role of `volunteer` or
+  `rescue_team_member`.
+- Accepts only `active` or `rejected` as the decision and only reviews profiles
+  whose current status is `pending`.
+- Execute is granted to `authenticated`; the function itself enforces the
+  administrator check, and authenticated users have no direct
+  `account_status` update grant.
+
+### `review_emergency_request(target_request_id, decision)`
+
+- `SECURITY DEFINER` function that approves or rejects a pending emergency
+  request.
+- Requires an active administrator caller and a request whose current status is
+  `pending`.
+- Accepts only `approved` or `rejected` as the decision, records
+  `reviewed_by = auth.uid()` and `reviewed_at = now()`, and returns the new
+  status.
+- Execute is granted to `authenticated`; the function itself enforces the
+  administrator check, and authenticated users have no direct update grant on
+  `emergency_requests`.
+
 ### `emergency_requests`
 
 - UUID `request_id`.
@@ -135,9 +175,17 @@ intentionally blocked. A missing table still reports `migration_required`.
   profiles. Users insert only their own profile and cannot self-register as
   administrators or set an unsafe initial approval state. Column-level grants
   restrict profile updates to `full_name`, `phone`, and `address`.
+- `profiles.account_status`: authenticated users have no direct update grant.
+  Administrators approve or reject pending volunteer and rescue team accounts
+  through `review_responder_account`, which re-checks the caller with
+  `public.is_admin()` and rejects victim or administrator targets.
 - `emergency_requests`: victims read their own requests, active responders read
   approved requests, and administrators read all requests. Only active victims
-  can insert their own pending requests.
+  can insert their own pending requests. The insert column grant covers only the
+  request details; status and review columns remain server-controlled, and
+  authenticated users have no update or delete grant. Administrators approve or
+  reject pending requests through `review_emergency_request`, which re-checks the
+  caller with `public.is_admin()` and records the reviewer and review time.
 - `emergency_assignments`: responders read their own assignments, victims read
   assignments for their requests, and administrators read all assignments.
   Assignment writes are reserved for the responder workflow chunk.
@@ -162,7 +210,49 @@ creation so the deployed schema does not need an extra migration:
 This keeps profile creation recoverable without a service-role key or an
 additional migration.
 
-## 8. Operational note
+## 8. Chunk 3 responder approval lifecycle
+
+- Only active administrators can open `/admin/responders` or invoke the review
+  action.
+- Pending volunteer and rescue team profiles appear in the queue, oldest first.
+- The review card shows role, contact details, rescue team category, and Defence
+  subcategory.
+- Approving sets `account_status` to `active`; rejecting sets it to `rejected`.
+- Only `pending` volunteer or rescue team profiles can be reviewed. Victim and
+  administrator profiles are excluded.
+- The Server Action re-checks the administrator role, then calls
+  `review_responder_account`.
+- The function is `SECURITY DEFINER` with `search_path = ''` and raises `42501`
+  for non-administrators, `P0002` for missing profiles, and `22023` for
+  non-pending profiles or invalid decisions.
+- No service-role key is used.
+
+## 9. Chunk 4 request lifecycle
+
+- Only active victim profiles can insert emergency requests.
+- The Server Action derives `victim_id` from the session and never accepts it
+  from the form.
+- `request_status` is not part of the authenticated insert column grant, so the
+  database default `pending` applies and a client cannot approve its own
+  request.
+- `reviewed_by` and `reviewed_at` are not insertable by authenticated users.
+- Victims read their own requests. The victim pages also filter by `victim_id`
+  as a second, request-scoped guard.
+- Authenticated users have no update or delete grant on `emergency_requests`, so
+  submitted details and review fields remain server-controlled.
+- Only active administrators can open `/admin/requests` or invoke the review
+  action. Pending requests are listed oldest first with victim contact details.
+- Approving sets `request_status` to `approved`; rejecting sets it to `rejected`.
+  The function records `reviewed_by` and `reviewed_at`.
+- Only `pending` requests can be reviewed. The function raises `42501` for
+  non-administrators, `P0002` for missing requests, and `22023` for invalid
+  decisions or already-reviewed requests.
+- Active responders can read approved requests through the select policy. Their
+  dashboards list approved requests read-only; assignment and acceptance are
+  Chunk 5 work.
+- No service-role key is used.
+
+## 10. Operational note
 
 No service-role key is configured for this project. The application therefore
 cannot delete Auth users or bypass RLS from server code. If a test or abandoned

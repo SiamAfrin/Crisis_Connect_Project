@@ -15,6 +15,9 @@ export const metadata: Metadata = {
   description: "Review your Crisis Connect account status.",
 };
 
+// This page blocks on the signed-in session, so it cannot render an instant shell.
+export const instant = false;
+
 const statusCopy = {
   active: {
     title: "Your account is active.",

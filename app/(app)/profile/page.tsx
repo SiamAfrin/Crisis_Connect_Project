@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   description: "Update your Crisis Connect profile.",
 };
 
+// This page blocks on the signed-in session, so it cannot render an instant shell.
+export const instant = false;
+
 export default async function ProfilePage() {
   const { profile } = await requireProfile();
   const roleLabel = getRoleLabel(profile.role);

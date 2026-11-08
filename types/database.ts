@@ -204,6 +204,20 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
       };
+      review_responder_account: {
+        Args: {
+          target_profile_id: string;
+          decision: Database["public"]["Enums"]["account_status"];
+        };
+        Returns: Database["public"]["Enums"]["account_status"];
+      };
+      review_emergency_request: {
+        Args: {
+          target_request_id: string;
+          decision: Database["public"]["Enums"]["request_status"];
+        };
+        Returns: Database["public"]["Enums"]["request_status"];
+      };
     };
     Enums: {
       user_role: "victim" | "volunteer" | "rescue_team_member" | "administrator";

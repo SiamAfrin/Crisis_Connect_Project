@@ -1,19 +1,25 @@
 import type { Metadata } from "next";
 
 import { PlaceholderCard } from "@/components/dashboard/placeholder-card";
+import { ApprovedRequestCard } from "@/components/requests/approved-request-card";
+import { Notice } from "@/components/ui/form";
 import { requireActiveResponder } from "@/lib/auth/dal";
 import {
   getDefenceSubcategoryLabel,
   getRescueCategoryLabel,
 } from "@/lib/constants";
+import { listApprovedRequests } from "@/lib/requests/data";
 
 export const metadata: Metadata = {
   title: "Rescue team dashboard",
   description: "Your Crisis Connect rescue team dashboard.",
 };
 
+// This page blocks on the rescue team session, so it cannot render an instant shell.
+export const instant = false;
+
 export default async function RescueDashboardPage() {
-  const { profile } = await requireActiveResponder(
+  const { supabase, profile } = await requireActiveResponder(
     "rescue_team_member",
   );
   const categoryLabel = getRescueCategoryLabel(
@@ -22,6 +28,7 @@ export default async function RescueDashboardPage() {
   const subcategoryLabel = getDefenceSubcategoryLabel(
     profile.defence_subcategory,
   );
+  const { requests, error } = await listApprovedRequests(supabase);
 
   return (
     <div className="space-y-8">
@@ -33,8 +40,9 @@ export default async function RescueDashboardPage() {
           Welcome, {profile.full_name}
         </h1>
         <p className="mt-3 max-w-2xl text-pretty text-sm leading-6 text-slate-600">
-          Your rescue team account is approved and active. Assignment and
-          response workflows arrive in a later approved chunk.
+          Your rescue team account is approved and active. Approved emergency
+          requests are visible below; assignment and response workflows arrive
+          in a later approved chunk.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           {categoryLabel ? (
@@ -49,6 +57,43 @@ export default async function RescueDashboardPage() {
           ) : null}
         </div>
       </header>
+
+      <section className="space-y-4" aria-label="Approved emergency requests">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-950">
+            Approved requests
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Requests an administrator has approved for responder visibility.
+          </p>
+        </div>
+
+        {error ? (
+          <Notice tone="warning">
+            We could not load approved requests right now. Refresh the page to
+            try again.
+          </Notice>
+        ) : null}
+
+        {!error && requests.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center sm:p-10">
+            <p className="text-sm leading-6 text-slate-600">
+              No approved emergency requests are available yet.
+            </p>
+          </div>
+        ) : null}
+
+        {requests.length > 0 ? (
+          <div className="space-y-4">
+            {requests.map((request) => (
+              <ApprovedRequestCard
+                key={request.request_id}
+                request={request}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       <section className="grid gap-4 sm:grid-cols-2">
         <PlaceholderCard

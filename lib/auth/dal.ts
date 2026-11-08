@@ -1,5 +1,6 @@
 import "server-only";
 
+import { io } from "next/cache";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
@@ -25,6 +26,11 @@ export type ProfileContext = {
  * and React's cache only lives for the current request.
  */
 const loadProfileContext = cache(async () => {
+  // The Supabase auth client reads the current time while resolving a session.
+  // Suspend before constructing it so those reads are never captured in a
+  // static shell. In Server Actions `io()` resolves immediately.
+  await io();
+
   const supabase = await createClient();
   const {
     data: { user },
