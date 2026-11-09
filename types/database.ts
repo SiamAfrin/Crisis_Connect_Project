@@ -183,6 +183,42 @@ export type Database = {
           },
         ];
       };
+      emergency_acceptances: {
+        Row: {
+          acceptance_id: string;
+          request_id: string;
+          responder_id: string;
+          accepted_at: string;
+        };
+        Insert: {
+          acceptance_id?: string;
+          request_id: string;
+          responder_id: string;
+          accepted_at?: string;
+        };
+        Update: {
+          acceptance_id?: string;
+          request_id?: string;
+          responder_id?: string;
+          accepted_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "emergency_acceptances_request_id_fkey";
+            columns: ["request_id"];
+            isOneToOne: false;
+            referencedRelation: "emergency_requests";
+            referencedColumns: ["request_id"];
+          },
+          {
+            foreignKeyName: "emergency_acceptances_responder_id_fkey";
+            columns: ["responder_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -217,6 +253,19 @@ export type Database = {
           decision: Database["public"]["Enums"]["request_status"];
         };
         Returns: Database["public"]["Enums"]["request_status"];
+      };
+      accept_emergency_request: {
+        Args: {
+          target_request_id: string;
+        };
+        Returns: string;
+      };
+      assign_emergency_responder: {
+        Args: {
+          target_request_id: string;
+          target_responder_id: string;
+        };
+        Returns: string;
       };
     };
     Enums: {

@@ -21,11 +21,14 @@ Apply the migrations in filename order:
 supabase/migrations/20261107000000_initial_schema.sql
 supabase/migrations/20261108000000_admin_responder_approval.sql
 supabase/migrations/20261109000000_admin_request_review.sql
+supabase/migrations/20261110000000_responder_acceptance_assignment.sql
 ```
 
 The first creates the schema, policies, and grants. The second adds the
 administrator responder-approval function. The third adds the administrator
-emergency-request review function.
+emergency-request review function. The fourth adds responder acceptances, the
+victim-contact policy for accepted responders, and the acceptance and assignment
+functions.
 
 ### Option A — Supabase Dashboard
 
@@ -50,8 +53,8 @@ client-side environment variables.
 
 ## 3. Authentication settings
 
-Chunk 2 uses email/password authentication without email verification, OTP,
-CAPTCHA, or MFA. In the Supabase dashboard, set:
+The application uses email/password authentication without email verification,
+OTP, CAPTCHA, or MFA. In the Supabase dashboard, set:
 
 - **Authentication → Providers → Email → Confirm email:** disabled.
 - Keep email/password enabled.
@@ -69,7 +72,12 @@ Run these in the SQL Editor:
 select tablename, rowsecurity
 from pg_tables
 where schemaname = 'public'
-  and tablename in ('profiles', 'emergency_requests', 'emergency_assignments')
+  and tablename in (
+    'profiles',
+    'emergency_requests',
+    'emergency_assignments',
+    'emergency_acceptances'
+  )
 order by tablename;
 
 select schemaname, tablename, policyname, cmd
@@ -80,18 +88,28 @@ order by tablename, policyname;
 select indexname, tablename
 from pg_indexes
 where schemaname = 'public'
-  and tablename in ('profiles', 'emergency_requests', 'emergency_assignments')
+  and tablename in (
+    'profiles',
+    'emergency_requests',
+    'emergency_assignments',
+    'emergency_acceptances'
+  )
 order by tablename, indexname;
 
 select proname, prosecdef
 from pg_proc
-where proname in ('review_responder_account', 'review_emergency_request')
+where proname in (
+  'review_responder_account',
+  'review_emergency_request',
+  'accept_emergency_request',
+  'assign_emergency_responder'
+)
 order by proname;
 ```
 
-The result should return two rows with `prosecdef = true`, confirming that the
-administrator approval and request review functions exist and are
-`SECURITY DEFINER`.
+The function result should return four rows with `prosecdef = true`, confirming
+that the administrator approval, request review, request acceptance, and
+responder assignment functions exist and are `SECURITY DEFINER`.
 
 Then call the application health route:
 
@@ -151,6 +169,35 @@ intentionally blocked. A missing table still reports `migration_required`.
   administrator check, and authenticated users have no direct update grant on
   `emergency_requests`.
 
+### `accept_emergency_request(target_request_id)`
+
+- `SECURITY DEFINER` function that records that the signed-in active responder
+  accepted an approved request.
+- Derives the responder from `auth.uid()`; the client never supplies a responder
+  id.
+- Requires `public.is_active_responder()`, an existing request whose current
+  status is `approved`, and no previous acceptance by the same responder.
+- Returns the new `acceptance_id` and raises `42501` for non-responders, `P0002`
+  for missing requests, `22023` for non-approved requests, and `23505` for
+  duplicate acceptance.
+- Execute is granted to `authenticated`; authenticated users have no direct
+  insert, update, or delete grant on `emergency_acceptances`.
+
+### `assign_emergency_responder(target_request_id, target_responder_id)`
+
+- `SECURITY DEFINER` function that assigns a responder who already accepted the
+  request.
+- Requires `public.is_admin()`, an existing approved request, an active
+  `volunteer` or `rescue_team_member` target, a matching acceptance row, and no
+  existing assignment for the same request and responder.
+- Records `assigned_by = auth.uid()` and `assigned_at = now()`, starts the
+  assignment at `pending`, and returns the new `assignment_id`.
+- Raises `42501` for non-administrators, `P0002` for missing requests or
+  responders, `22023` for non-approved requests or ineligible responders, and
+  `23505` for duplicate assignments.
+- Execute is granted to `authenticated`; authenticated users have no direct
+  insert, update, or delete grant on `emergency_assignments`.
+
 ### `emergency_requests`
 
 - UUID `request_id`.
@@ -168,12 +215,26 @@ intentionally blocked. A missing table still reports `migration_required`.
 - Responder roles are limited to `volunteer` and `rescue_team_member`.
 - Assignment statuses: `pending`, `accepted`, `declined`, `cancelled`,
   `completed`.
+- New assignments are created only through `assign_emergency_responder`, which
+  records the assigning administrator and assignment time.
+
+### `emergency_acceptances`
+
+- UUID `acceptance_id`.
+- Foreign keys to the request and the accepting responder profile.
+- Unique `(request_id, responder_id)` constraint prevents duplicate acceptance.
+- `accepted_at` records when the responder accepted the approved request.
+- Indexed by `request_id` and `responder_id`.
+- Responders read only their own acceptances; administrators read all of them.
+  There is no victim access to acceptance rows.
 
 ## 6. RLS notes
 
 - `profiles`: users read their own profile; active administrators read all
-  profiles. Users insert only their own profile and cannot self-register as
-  administrators or set an unsafe initial approval state. Column-level grants
+  profiles. Active responders can also read the contact details of victims whose
+  request they accepted, so victim contact information becomes available only
+  after acceptance. Users insert only their own profile and cannot self-register
+  as administrators or set an unsafe initial approval state. Column-level grants
   restrict profile updates to `full_name`, `phone`, and `address`.
 - `profiles.account_status`: authenticated users have no direct update grant.
   Administrators approve or reject pending volunteer and rescue team accounts
@@ -188,9 +249,16 @@ intentionally blocked. A missing table still reports `migration_required`.
   caller with `public.is_admin()` and records the reviewer and review time.
 - `emergency_assignments`: responders read their own assignments, victims read
   assignments for their requests, and administrators read all assignments.
-  Assignment writes are reserved for the responder workflow chunk.
+  Assignment creation is reserved for `assign_emergency_responder`, which
+  re-checks the administrator role, the approved request, the responder's active
+  status, and the responder's acceptance.
+- `emergency_acceptances`: responders read only their own acceptance rows and
+  administrators read all of them. Acceptance creation is reserved for
+  `accept_emergency_request`, which derives the responder from `auth.uid()` and
+  re-checks active responder status and request approval. Authenticated users
+  have no direct insert, update, or delete grant.
 
-## 7. Chunk 2 profile lifecycle
+## 7. Profile lifecycle
 
 There is no database trigger that creates profiles. The application owns profile
 creation so the deployed schema does not need an extra migration:
@@ -210,7 +278,7 @@ creation so the deployed schema does not need an extra migration:
 This keeps profile creation recoverable without a service-role key or an
 additional migration.
 
-## 8. Chunk 3 responder approval lifecycle
+## 8. Responder approval lifecycle
 
 - Only active administrators can open `/admin/responders` or invoke the review
   action.
@@ -227,7 +295,7 @@ additional migration.
   non-pending profiles or invalid decisions.
 - No service-role key is used.
 
-## 9. Chunk 4 request lifecycle
+## 9. Request lifecycle
 
 - Only active victim profiles can insert emergency requests.
 - The Server Action derives `victim_id` from the session and never accepts it
@@ -248,11 +316,37 @@ additional migration.
   non-administrators, `P0002` for missing requests, and `22023` for invalid
   decisions or already-reviewed requests.
 - Active responders can read approved requests through the select policy. Their
-  dashboards list approved requests read-only; assignment and acceptance are
-  Chunk 5 work.
+  dashboards list approved requests and offer the accept action.
 - No service-role key is used.
 
-## 10. Operational note
+## 10. Acceptance and assignment lifecycle
+
+- Only active volunteers and rescue team members can open their responder
+  dashboards or call the acceptance action. Pending and rejected responders are
+  redirected to the account-status page.
+- The Server Action derives the responder from the session, validates the
+  request id, then calls `accept_emergency_request`. The function repeats the
+  active responder check and derives the responder from `auth.uid()`.
+- Only approved requests can be accepted. A unique `(request_id, responder_id)`
+  constraint and an explicit existence check reject duplicate acceptance.
+- Multiple different responders may accept the same request.
+- Accepting does not create an assignment. It only makes the responder eligible
+  for administrator assignment.
+- Accepted responders gain read access to that victim's contact profile through
+  the additive `profiles` select policy. The policy requires active responder
+  status and a matching acceptance row.
+- Only active administrators can open `/admin/assignments` or call the
+  assignment action. The queue lists approved requests that have at least one
+  acceptance, with responder role, rescue category, Defence subcategory,
+  acceptance time, and assignment status.
+- `assign_emergency_responder` requires an approved request, an active
+  volunteer/rescue target, and a matching acceptance row. It records
+  `assigned_by = auth.uid()` and `assigned_at = now()` and rejects duplicates.
+- Responders see only their own assignments. RLS and the request-scoped
+  `responder_id` filter both enforce this.
+- No service-role key is used.
+
+## 11. Operational note
 
 No service-role key is configured for this project. The application therefore
 cannot delete Auth users or bypass RLS from server code. If a test or abandoned

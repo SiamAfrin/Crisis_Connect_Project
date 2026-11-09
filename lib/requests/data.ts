@@ -131,3 +131,135 @@ export async function listApprovedRequests(
 
   return { requests: data ?? [] };
 }
+
+export type ResponderAcceptanceRow = Tables<"emergency_acceptances">;
+export type ResponderAssignmentRow = Tables<"emergency_assignments">;
+
+export type RequestVictimContact = Pick<
+  Tables<"profiles">,
+  "id" | "full_name" | "phone" | "address"
+>;
+
+export type AssignedRequest = {
+  assignment: ResponderAssignmentRow;
+  request: EmergencyRequestRow | null;
+};
+
+export type ResponderWorkspace = {
+  approved: EmergencyRequestRow[];
+  acceptances: ResponderAcceptanceRow[];
+  assignments: AssignedRequest[];
+  victims: RequestVictimContact[];
+  error?: string;
+};
+
+const EMPTY_WORKSPACE: ResponderWorkspace = {
+  approved: [],
+  acceptances: [],
+  assignments: [],
+  victims: [],
+};
+
+/**
+ * Loads everything an active responder dashboard needs in one place: approved
+ * requests, this responder's acceptances, this responder's assignments, and the
+ * victim contact details that RLS allows for requests the responder accepted.
+ *
+ * Every query also filters by `responder_id` as a second, request-scoped guard
+ * on top of RLS. Another responder's acceptances and assignments are never
+ * returned.
+ */
+export async function getResponderWorkspace(
+  supabase: SupabaseServerClient,
+  responderId: string,
+  approvedLimit = 50,
+): Promise<ResponderWorkspace> {
+  const [approvedResult, acceptanceResult, assignmentResult] =
+    await Promise.all([
+      listApprovedRequests(supabase, approvedLimit),
+      supabase
+        .from("emergency_acceptances")
+        .select("*")
+        .eq("responder_id", responderId)
+        .order("accepted_at", { ascending: false }),
+      supabase
+        .from("emergency_assignments")
+        .select("*")
+        .eq("responder_id", responderId)
+        .order("assigned_at", { ascending: false }),
+    ]);
+
+  const error =
+    approvedResult.error ??
+    acceptanceResult.error?.message ??
+    assignmentResult.error?.message;
+
+  if (error) {
+    return { ...EMPTY_WORKSPACE, error };
+  }
+
+  const acceptances = acceptanceResult.data ?? [];
+  const assignmentRows = assignmentResult.data ?? [];
+  const assignmentRequestIds = [
+    ...new Set(assignmentRows.map((assignment) => assignment.request_id)),
+  ];
+
+  const assignedRequestsResult =
+    assignmentRequestIds.length > 0
+      ? await supabase
+          .from("emergency_requests")
+          .select("*")
+          .in("request_id", assignmentRequestIds)
+      : { data: [] as EmergencyRequestRow[], error: null };
+
+  if (assignedRequestsResult.error) {
+    return {
+      ...EMPTY_WORKSPACE,
+      error: assignedRequestsResult.error.message,
+    };
+  }
+
+  const assignedRequestsById = new Map(
+    (assignedRequestsResult.data ?? []).map(
+      (request) => [request.request_id, request] as const,
+    ),
+  );
+
+  const acceptedRequestIds = new Set(
+    acceptances.map((acceptance) => acceptance.request_id),
+  );
+
+  const victimIds = new Set<string>();
+
+  for (const request of approvedResult.requests) {
+    if (acceptedRequestIds.has(request.request_id)) {
+      victimIds.add(request.victim_id);
+    }
+  }
+
+  for (const request of assignedRequestsById.values()) {
+    victimIds.add(request.victim_id);
+  }
+
+  const victimsResult =
+    victimIds.size > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, full_name, phone, address")
+          .in("id", [...victimIds])
+      : { data: [] as RequestVictimContact[], error: null };
+
+  if (victimsResult.error) {
+    return { ...EMPTY_WORKSPACE, error: victimsResult.error.message };
+  }
+
+  return {
+    approved: approvedResult.requests,
+    acceptances,
+    assignments: assignmentRows.map((assignment) => ({
+      assignment,
+      request: assignedRequestsById.get(assignment.request_id) ?? null,
+    })),
+    victims: victimsResult.data ?? [],
+  };
+}

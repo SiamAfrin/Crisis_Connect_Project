@@ -38,17 +38,14 @@ export default async function LoginPage({
     : undefined;
 
   return (
-    <div className="mt-8 lg:mt-0">
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-600">
-          Welcome back
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-slate-950">
-          Sign in to Crisis Connect
+    <div>
+      <div className="panel p-6 sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-ink-950">
+          Sign in
         </h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
+        <p className="mt-2 text-sm leading-6 text-ink-600">
           Use the email and password you registered with. Pending responder
-          accounts can sign in but cannot access responder features yet.
+          accounts can sign in to review their status.
         </p>
 
         <div className="mt-7">
@@ -58,11 +55,6 @@ export default async function LoginPage({
           />
         </div>
       </div>
-
-      <p className="mt-5 text-center text-xs text-slate-500">
-        Email/password authentication only. No OTP, CAPTCHA, or two-factor
-        step.
-      </p>
     </div>
   );
 }

@@ -30,7 +30,19 @@ export const reviewEmergencyRequestSchema = z.object({
   }),
 });
 
+export const assignResponderSchema = z.object({
+  requestId: z
+    .string()
+    .trim()
+    .regex(UUID_PATTERN, "Invalid request reference."),
+  responderId: z
+    .string()
+    .trim()
+    .regex(UUID_PATTERN, "Invalid responder reference."),
+});
+
 export type ReviewResponderInput = z.infer<typeof reviewResponderSchema>;
 export type ReviewEmergencyRequestInput = z.infer<
   typeof reviewEmergencyRequestSchema
 >;
+export type AssignResponderInput = z.infer<typeof assignResponderSchema>;

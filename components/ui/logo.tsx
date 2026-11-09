@@ -11,25 +11,25 @@ export function Logo({
 
   return (
     <div className="flex items-center gap-3">
-      <div className="grid size-11 place-items-center rounded-2xl bg-rose-600 text-white shadow-lg shadow-rose-600/25">
+      <div className="relative grid size-10 shrink-0 place-items-center rounded-lg bg-signal-600 text-white shadow-sm">
         <svg
           aria-hidden="true"
           viewBox="0 0 24 24"
           fill="none"
-          className="size-6"
+          className="size-5"
         >
           <path
-            d="M9 4.75A1.75 1.75 0 0 1 10.75 3h2.5A1.75 1.75 0 0 1 15 4.75V9h4.25A1.75 1.75 0 0 1 21 10.75v2.5A1.75 1.75 0 0 1 19.25 15H15v4.25A1.75 1.75 0 0 1 13.25 21h-2.5A1.75 1.75 0 0 1 9 19.25V15H4.75A1.75 1.75 0 0 1 3 13.25v-2.5A1.75 1.75 0 0 1 4.75 9H9V4.75Z"
+            d="M9.25 3h5.5A1.25 1.25 0 0 1 16 4.25V8h3.75A1.25 1.25 0 0 1 21 9.25v5.5A1.25 1.25 0 0 1 19.75 16H16v3.75A1.25 1.25 0 0 1 14.75 21h-5.5A1.25 1.25 0 0 1 8 19.75V16H4.25A1.25 1.25 0 0 1 3 14.75v-5.5A1.25 1.25 0 0 1 4.25 8H8V4.25A1.25 1.25 0 0 1 9.25 3Z"
             fill="currentColor"
           />
         </svg>
       </div>
-      <div>
+      <div className="min-w-0">
         <p
           className={
             isLight
-              ? "text-base font-semibold tracking-tight text-white"
-              : "text-base font-semibold tracking-tight text-slate-950"
+              ? "text-[0.95rem] font-semibold leading-5 tracking-tight text-white"
+              : "text-[0.95rem] font-semibold leading-5 tracking-tight text-ink-950"
           }
         >
           Crisis Connect
@@ -37,8 +37,8 @@ export function Logo({
         <p
           className={
             isLight
-              ? "text-sm text-slate-400"
-              : "text-sm text-slate-500"
+              ? "truncate text-[0.68rem] leading-4 text-ink-300"
+              : "truncate text-[0.68rem] leading-4 text-ink-600"
           }
         >
           {subtitle}

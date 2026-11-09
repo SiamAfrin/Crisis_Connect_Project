@@ -11,6 +11,7 @@ import {
 import { requireActiveRole } from "@/lib/auth/dal";
 
 import {
+  assignResponderSchema,
   reviewEmergencyRequestSchema,
   reviewResponderSchema,
 } from "./schemas";
@@ -161,6 +162,81 @@ export async function reviewEmergencyRequestAction(
       data === "approved"
         ? "Emergency request approved. Approved responders can now see it."
         : "Emergency request rejected.",
+    revision: previousState.revision + 1,
+  };
+}
+
+function describeAssignmentError(error: PostgrestError): string {
+  if (error.code === "PGRST202") {
+    return "Responder assignment is not available yet. Apply the responder acceptance migration in Supabase, then try again.";
+  }
+
+  if (error.code === "42501") {
+    return "Only active administrators can assign responders.";
+  }
+
+  if (error.code === "P0002") {
+    return "That request or responder account no longer exists. Refresh the page.";
+  }
+
+  if (error.code === "23505") {
+    return "That responder is already assigned to this request. Refresh the page.";
+  }
+
+  if (error.code === "22023") {
+    return "Only active responders who accepted the request can be assigned. Refresh the page to see the current state.";
+  }
+
+  return "The assignment could not be saved. Please try again.";
+}
+
+/**
+ * Assigns an active responder who has already accepted an approved request.
+ *
+ * The Server Action re-checks the active administrator role, then calls a
+ * SECURITY DEFINER function that repeats the same checks, derives the assigning
+ * administrator from the session, and records the assignment time.
+ */
+export async function assignEmergencyResponderAction(
+  previousState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { supabase } = await requireActiveRole("administrator");
+
+  const parsed = assignResponderSchema.safeParse({
+    requestId: readString(formData, "requestId"),
+    responderId: readString(formData, "responderId"),
+  });
+
+  if (!parsed.success) {
+    return invalidState(parsed.error, previousState.revision);
+  }
+
+  const { data, error } = await supabase.rpc(
+    "assign_emergency_responder",
+    {
+      target_request_id: parsed.data.requestId,
+      target_responder_id: parsed.data.responderId,
+    },
+  );
+
+  if (error) {
+    return errorState(
+      describeAssignmentError(error),
+      previousState.revision,
+    );
+  }
+
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/assignments");
+  revalidatePath("/volunteer/dashboard");
+  revalidatePath("/rescue/dashboard");
+
+  return {
+    status: "success",
+    message: data
+      ? "Responder assigned. The responder can now see this assignment."
+      : "Responder assigned.",
     revision: previousState.revision + 1,
   };
 }

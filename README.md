@@ -1,13 +1,9 @@
 # Crisis Connect
 
 Crisis Connect is a centralized emergency response and coordination system for
-victims, volunteers, rescue team members, and administrators.
-
-This repository is being built in approved chunks. **Chunk 4 (Victim Emergency
-Request and Admin Review)** is implemented and pending review. Chunks 1–3
-(project foundation, authentication and profiles, and administrator responder
-approval) remain in place. Responder assignment and acceptance are **Chunk 5**
-and are not implemented yet.
+victims, volunteers, rescue team members, and administrators. Victims submit
+emergency requests, administrators review them, verified responders accept
+approved requests, and administrators assign the responders who accepted.
 
 ## Stack
 
@@ -38,7 +34,7 @@ and are not implemented yet.
    Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never add a `NEXT_PUBLIC_`
    prefix to it.
 
-3. Apply all three migrations to the Supabase project, in filename order. See
+3. Apply all migrations to the Supabase project, in filename order. See
    [`supabase/README.md`](supabase/README.md).
 
 4. In the Supabase dashboard, disable **Authentication → Providers → Email →
@@ -67,15 +63,16 @@ and are not implemented yet.
 | `/login` | Public | Email/password login |
 | `/account-status` | Authenticated | Pending, active, or rejected account status |
 | `/profile` | Authenticated | Edit full name, phone, and address |
-| `/victim/dashboard` | Active victim | Victim dashboard with request summary (Chunk 4 work) |
-| `/victim/requests` | Active victim | List and track the victim's own requests (Chunk 4 work) |
-| `/victim/requests/new` | Active victim | Submit an emergency request (Chunk 4 work) |
-| `/victim/requests/[requestId]` | Active victim | Request details and review status (Chunk 4 work) |
-| `/volunteer/dashboard` | Active volunteer | Volunteer placeholder dashboard |
-| `/rescue/dashboard` | Active rescue team member | Rescue team placeholder dashboard |
-| `/admin/dashboard` | Active administrator | Administrator dashboard with approval summary |
+| `/victim/dashboard` | Active victim | Victim dashboard with request summary |
+| `/victim/requests` | Active victim | List and track the victim's own requests |
+| `/victim/requests/new` | Active victim | Submit an emergency request |
+| `/victim/requests/[requestId]` | Active victim | Request details and review status |
+| `/volunteer/dashboard` | Active volunteer | Accept approved requests and view own assignments |
+| `/rescue/dashboard` | Active rescue team member | Accept approved requests and view own assignments |
+| `/admin/dashboard` | Active administrator | Administrator dashboard with approval, request, and assignment summaries |
 | `/admin/responders` | Active administrator | Review and approve or reject responder registrations |
 | `/admin/requests` | Active administrator | Review and approve or reject emergency requests |
+| `/admin/assignments` | Active administrator | Assign accepted responders to approved requests |
 | `/api/health/supabase` | Public | Supabase Auth and schema health check |
 
 ## Authentication and account behavior
@@ -113,7 +110,7 @@ and are not implemented yet.
   Authenticated users still have no direct update grant on `account_status`.
 - No seeded or fake accounts are created for review.
 
-## Emergency request behavior (Chunk 4)
+## Emergency request behavior
 
 - Only **active victim** accounts can submit emergency requests.
 - A request collects emergency type, location, description, severity, and the
@@ -136,8 +133,36 @@ and are not implemented yet.
   requests. Authenticated users have no direct update grant on
   `emergency_requests`.
 - Only approved requests become readable by active volunteers and rescue team
-  members. Their dashboards list approved requests read-only; assignment and
-  acceptance are **Chunk 5** work.
+  members.
+
+## Responder acceptance and assignment behavior
+
+- Only **active volunteer and rescue team member** accounts can accept approved
+  requests. Pending and rejected responders cannot reach the dashboards, and the
+  acceptance function re-checks active responder status.
+- Acceptance records the responder from the session, the request, and the
+  acceptance time in `emergency_acceptances`. The client never supplies the
+  responder id.
+- A responder can accept a request only once. Duplicate acceptance is blocked by
+  a unique constraint and reported as an error.
+- Only **approved** requests can be accepted. Rejected, pending, or deleted
+  requests are refused.
+- Accepting does not assign the responder. It makes the responder eligible for
+  administrator assignment.
+- Responders see victim contact details only for requests they have accepted,
+  through a dedicated RLS policy. Contact details are not exposed for
+  unaccepted requests.
+- Only **active administrators** can open `/admin/assignments` or call the
+  assignment action. The page lists approved requests with their accepted
+  responders.
+- Only responders who **accepted that request** and are still **active** can be
+  assigned. The function re-checks both conditions.
+- The same responder cannot be assigned to the same request twice. Multiple
+  different responders may be assigned to one request.
+- The assigning administrator and assignment time are recorded by the database.
+  New assignments start with the `pending` assignment status.
+- Responders see only their own assignments; RLS and the request-scoped query
+  filter both enforce this.
 
 ## Protected routes and authorization
 
@@ -149,9 +174,11 @@ Protection is layered:
 3. Each role dashboard and request page independently requires the correct
    active role.
 4. Server Actions re-check the session and active role before profile updates,
-   request submission, or responder review decisions.
-5. RLS policies and column-level grants block direct privilege changes and
-   cross-victim request access.
+   request submission, responder review decisions, request acceptance, or
+   responder assignment.
+5. RLS policies and column-level grants block direct privilege changes,
+   cross-victim request access, and other responders' acceptance or assignment
+   rows.
 
 The UI is never the only authorization layer. Hiding a navigation link is not
 treated as access control.
@@ -173,30 +200,32 @@ app/
       requests/page.tsx           Victim request list
       requests/new/page.tsx       New emergency request form
       requests/[requestId]/page.tsx Request details and review status
-    volunteer/dashboard/page.tsx  Volunteer placeholder dashboard
-    rescue/dashboard/page.tsx     Rescue team placeholder dashboard
+    volunteer/dashboard/page.tsx  Volunteer accept/assignment dashboard
+    rescue/dashboard/page.tsx     Rescue team accept/assignment dashboard
     admin/
-      dashboard/page.tsx          Administrator dashboard with approval and request summaries
+      dashboard/page.tsx          Administrator dashboard with approval, request, and assignment summaries
       responders/page.tsx         Responder approval queue
       requests/page.tsx           Emergency request review queue
+      assignments/page.tsx        Accepted-request assignment queue
   api/health/supabase/route.ts    Supabase health check
   globals.css                     Tailwind import and base theme
   layout.tsx                      Root layout and metadata
   page.tsx                        Public landing page
 components/
+  app-nav.tsx                     Role-aware application navigation
   app-shell.tsx                   Protected header, navigation, and logout
-  admin/                          Responder approval and emergency request review cards
+  admin/                          Responder approval, request review, and assignment cards
   auth/                           Login and registration forms
-  dashboard/                      Placeholder dashboard cards
   profile/                        Profile edit form
-  requests/                       Request form, victim cards, approved-request card, and badges
-  ui/                             Logo, fields, alerts, status badge
+  requests/                       Request forms, victim/responder cards, accept actions, and badges
+  responder/                      Shared responder dashboard
+  ui/                             Icons, buttons, logo, fields, alerts, badges, headers, and cards
 lib/
   admin/
-    actions.ts                    Responder approval and request review Server Actions
-    data.ts                       Responder and emergency request queries and counts
+    actions.ts                    Responder approval, request review, and assignment Server Actions
+    data.ts                       Responder, request, acceptance, and assignment queries and counts
     format.ts                     Registration date formatting
-    schemas.ts                    Review validation and id checks
+    schemas.ts                    Review and assignment validation
   auth/
     actions.ts                    Registration, login, logout, profile actions
     action-state.ts               Form action state helpers
@@ -205,8 +234,8 @@ lib/
     routes.ts                     Role destinations and safe redirects
     schemas.ts                    Zod validation schemas
   requests/
-    actions.ts                    Emergency request Server Action
-    data.ts                       Victim and responder request queries and counts
+    actions.ts                    Emergency request submission and acceptance Server Actions
+    data.ts                       Victim, responder workspace, and assignment queries
     format.ts                     Date and number formatting
     schemas.ts                    Request validation and id checks
   constants.ts                    Role, category, status, and severity constants
@@ -221,6 +250,7 @@ supabase/
     20261107000000_initial_schema.sql
     20261108000000_admin_responder_approval.sql
     20261109000000_admin_request_review.sql
+    20261110000000_responder_acceptance_assignment.sql
   README.md                       Migration, auth settings, and RLS notes
 types/
   database.ts                     Typed Supabase database schema
@@ -238,8 +268,8 @@ types/
 
 ## Security notes
 
-- RLS is enabled on `profiles`, `emergency_requests`, and
-  `emergency_assignments`.
+- RLS is enabled on `profiles`, `emergency_requests`, `emergency_assignments`,
+  and `emergency_acceptances`.
 - Public registration cannot create an administrator profile.
 - Volunteers and rescue team members cannot self-activate. Authenticated users
   have no direct update grant on `account_status`.
@@ -255,20 +285,15 @@ types/
   requests; active responders can read approved requests.
 - Emergency requests have no victim update or delete grant, so submitted
   details and review fields cannot be changed from the client.
-- The same responder cannot be assigned to the same request more than once.
-- Request and assignment reads are limited by role and relationship.
-- Assignment writes remain reserved for a later chunk.
+- The same responder cannot be assigned to the same request more than once, and
+  the same responder cannot accept the same request more than once.
+- Request, acceptance, and assignment reads are limited by role and relationship.
+- Acceptance is applied by a `SECURITY DEFINER` function that derives the
+  responder from the session and requires active responder status and an
+  approved request.
+- Assignment is applied by a `SECURITY DEFINER` function that requires an active
+  administrator, an approved request, an active responder, and a matching
+  acceptance, and records the assigning administrator and time.
+- Victim contact details are readable by a responder only after that responder
+  accepted the victim's request.
 - The Supabase service role key is not used by the application.
-
-## Chunk boundary
-
-Chunk 4 does **not** include:
-
-- responder assignment or acceptance (Chunk 5);
-- live response tracking (Chunk 6);
-- testing, final security review, or documentation beyond Chunk 4 verification
-  (Chunk 6);
-- live GPS tracking, real-time chat, SMS alerts, or automatic disaster alerts;
-- seeded/fake users or requests.
-
-Those features are implemented only after this chunk is explicitly approved.

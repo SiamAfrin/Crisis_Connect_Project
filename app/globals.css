@@ -7,6 +7,31 @@
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
+
+  --color-canvas: #f4f6f8;
+  --color-line: #dce3e8;
+  --color-line-soft: #e9eef1;
+
+  --color-ink-50: #f2f5f7;
+  --color-ink-100: #e6ecef;
+  --color-ink-200: #cfdae1;
+  --color-ink-300: #aebfc9;
+  --color-ink-400: #8499a7;
+  --color-ink-500: #63798a;
+  --color-ink-600: #4b6172;
+  --color-ink-700: #344b5d;
+  --color-ink-800: #1f384b;
+  --color-ink-900: #12293a;
+  --color-ink-950: #0b1b2a;
+
+  --color-signal-50: #fef3f2;
+  --color-signal-100: #fee4e2;
+  --color-signal-200: #fecdca;
+  --color-signal-300: #fda29b;
+  --color-signal-400: #f97066;
+  --color-signal-500: #d92d20;
+  --color-signal-600: #b42318;
+  --color-signal-700: #912018;
 }
 
 :root {
@@ -19,11 +44,38 @@ html {
 
 body {
   min-height: 100%;
-  background: #f8fafc;
-  color: #020617;
+  background: var(--color-canvas);
+  color: var(--color-ink-950);
 }
 
 ::selection {
-  background: #fecdd3;
-  color: #881337;
+  background: var(--color-signal-100);
+  color: var(--color-signal-700);
+}
+
+@layer base {
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-line bg-white;
+  }
+
+  .meta-label {
+    @apply text-xs font-medium text-ink-500;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-300) transparent;
+  }
 }

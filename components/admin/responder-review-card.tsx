@@ -24,75 +24,63 @@ export function ResponderReviewCard({
   );
 
   return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+    <article className="panel p-6 sm:p-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-950">
+          <h2 className="text-lg font-semibold tracking-tight text-ink-950">
             {responder.full_name}
           </h2>
-          <p className="mt-1 break-all text-sm text-slate-500">
+          <p className="mt-1 break-all text-sm text-ink-500">
             {responder.email}
           </p>
         </div>
         <StatusBadge status={responder.account_status} />
       </div>
 
-      <dl className="mt-5 grid gap-x-8 gap-y-4 border-t border-slate-200 pt-5 sm:grid-cols-2">
+      <dl className="mt-5 grid gap-x-8 gap-y-4 border-t border-line pt-5 sm:grid-cols-2">
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Role
-          </dt>
-          <dd className="mt-1 text-sm font-medium text-slate-900">
+          <dt className="meta-label">Role</dt>
+          <dd className="mt-1 text-sm font-medium text-ink-900">
             {getRoleLabel(responder.role)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Phone
-          </dt>
-          <dd className="mt-1 text-sm font-medium text-slate-900">
+          <dt className="meta-label">Phone</dt>
+          <dd className="mt-1 text-sm font-medium text-ink-900">
             {responder.phone}
           </dd>
         </div>
         {categoryLabel ? (
           <div>
-            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Rescue team category
-            </dt>
-            <dd className="mt-1 text-sm font-medium text-slate-900">
+            <dt className="meta-label">Rescue team category</dt>
+            <dd className="mt-1 text-sm font-medium text-ink-900">
               {categoryLabel}
             </dd>
           </div>
         ) : null}
         {subcategoryLabel ? (
           <div>
-            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Defence subcategory
-            </dt>
-            <dd className="mt-1 text-sm font-medium text-slate-900">
+            <dt className="meta-label">Defence subcategory</dt>
+            <dd className="mt-1 text-sm font-medium text-ink-900">
               {subcategoryLabel}
             </dd>
           </div>
         ) : null}
         <div className="sm:col-span-2">
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Address
-          </dt>
-          <dd className="mt-1 text-sm font-medium text-slate-900">
+          <dt className="meta-label">Address</dt>
+          <dd className="mt-1 text-sm font-medium text-ink-900">
             {responder.address}
           </dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Registered
-          </dt>
-          <dd className="mt-1 text-sm font-medium text-slate-900">
+          <dt className="meta-label">Registered</dt>
+          <dd className="mt-1 text-sm font-medium text-ink-900">
             {formatRegistrationDate(responder.created_at)}
           </dd>
         </div>
       </dl>
 
-      <div className="mt-6 border-t border-slate-200 pt-5">
+      <div className="mt-6 border-t border-line pt-5">
         <ResponderReviewActions
           profileId={responder.id}
           name={responder.full_name}

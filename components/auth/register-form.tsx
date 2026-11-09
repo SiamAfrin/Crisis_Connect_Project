@@ -354,11 +354,11 @@ export function RegisterForm() {
         pendingLabel="Creating account..."
       />
 
-      <p className="text-center text-sm text-slate-500">
+      <p className="text-center text-sm text-ink-600">
         Already registered?{" "}
         <Link
           href="/login"
-          className="font-semibold text-rose-600 underline-offset-4 hover:underline"
+          className="font-semibold text-signal-600 underline-offset-4 hover:underline"
         >
           Sign in
         </Link>

@@ -93,11 +93,11 @@ export function LoginForm({ nextPath, noticeMessage }: LoginFormProps) {
         pendingLabel="Signing in..."
       />
 
-      <p className="text-center text-sm text-slate-500">
+      <p className="text-center text-sm text-ink-600">
         New to Crisis Connect?{" "}
         <Link
           href="/register"
-          className="font-semibold text-rose-600 underline-offset-4 hover:underline"
+          className="font-semibold text-signal-600 underline-offset-4 hover:underline"
         >
           Create an account
         </Link>

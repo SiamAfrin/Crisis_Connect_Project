@@ -2,13 +2,14 @@
 
 Reusable React components belong in this directory.
 
-Suggested organisation for the next chunks:
+Organisation:
 
-- `components/ui/` — buttons, fields, badges, cards, and layout primitives.
-- `components/auth/` — registration, login, and account-status components.
-- `components/admin/` — responder approval and emergency request review cards and actions.
-- `components/requests/` — Chunk 4 emergency request forms, victim cards, approved-request card, and status badges.
-- `components/responder/` — assignment and acceptance components (Chunk 5).
+- `components/ui/` — buttons, fields, badges, icons, page headers, stat cards, and other layout primitives.
+- `components/auth/` — registration and login forms.
+- `components/admin/` — responder approval, request review, and assignment cards and actions.
+- `components/requests/` — emergency request forms, victim and responder cards, accept actions, assignment cards, and status badges.
+- `components/responder/` — the shared responder dashboard.
+- `components/profile/` — the profile form.
 
 Components should stay presentational where practical. Server-side authorization
 must remain in Server Actions, Route Handlers, database policies, and other
