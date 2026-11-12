@@ -168,7 +168,7 @@ export async function reviewEmergencyRequestAction(
 
 function describeAssignmentError(error: PostgrestError): string {
   if (error.code === "PGRST202") {
-    return "Responder assignment is not available yet. Apply the responder acceptance migration in Supabase, then try again.";
+    return "Responder assignment is not available yet. Apply the latest responder workflow migration in Supabase, then try again.";
   }
 
   if (error.code === "42501") {
@@ -179,8 +179,8 @@ function describeAssignmentError(error: PostgrestError): string {
     return "That request or responder account no longer exists. Refresh the page.";
   }
 
-  if (error.code === "23505") {
-    return "That responder is already assigned to this request. Refresh the page.";
+  if (error.code === "CC001" || error.code === "23505") {
+    return "This request already has an assigned responder. Refresh the page to see the current state.";
   }
 
   if (error.code === "22023") {
@@ -195,7 +195,8 @@ function describeAssignmentError(error: PostgrestError): string {
  *
  * The Server Action re-checks the active administrator role, then calls a
  * SECURITY DEFINER function that repeats the same checks, derives the assigning
- * administrator from the session, and records the assignment time.
+ * administrator from the session, records the assignment time, and rejects the
+ * assignment when the request already has an assigned responder.
  */
 export async function assignEmergencyResponderAction(
   previousState: ActionState,

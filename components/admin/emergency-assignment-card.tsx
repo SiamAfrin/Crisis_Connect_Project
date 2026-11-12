@@ -21,14 +21,16 @@ type EmergencyAssignmentCardProps = {
 };
 
 /**
- * One approved request with every responder who accepted it. Each responder can
- * be assigned once; already assigned responders show their assignment status
- * instead of an assign button.
+ * One approved request with every responder who accepted it. Only one responder
+ * may be assigned to the request; once an assignment exists, the assigned
+ * responder is shown and every assign button is hidden.
  */
 export function EmergencyAssignmentCard({
   item,
 }: EmergencyAssignmentCardProps) {
   const { request, victim, responders } = item;
+  const assignedResponder =
+    responders.find(({ assignment }) => assignment !== null) ?? null;
 
   return (
     <article className="panel p-6 sm:p-7">
@@ -119,6 +121,19 @@ export function EmergencyAssignmentCard({
           </span>
         </h3>
 
+        {assignedResponder ? (
+          <p className="mt-2 text-sm text-ink-600">
+            Assigned to{" "}
+            <span className="font-semibold text-ink-950">
+              {assignedResponder.responder.full_name}
+            </span>
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-ink-500">
+            Choose one accepted responder to assign.
+          </p>
+        )}
+
         <ul className="mt-3 space-y-3">
           {responders.map(({ acceptance, responder, assignment }) => {
             const categoryLabel = getRescueCategoryLabel(
@@ -171,6 +186,8 @@ export function EmergencyAssignmentCard({
                           Assigned {formatDateTime(assignment.assigned_at)}
                         </p>
                       </>
+                    ) : assignedResponder ? (
+                      <span className="text-xs text-ink-500">Not assigned</span>
                     ) : (
                       <AssignResponderButton
                         requestId={request.request_id}

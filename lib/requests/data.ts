@@ -161,9 +161,27 @@ const EMPTY_WORKSPACE: ResponderWorkspace = {
 };
 
 /**
+ * Returns the ids of approved requests that already have an assigned responder.
+ * The database function returns ids only, so a responder can hide the accept
+ * action without learning which responder owns the request.
+ */
+async function listAssignedRequestIds(
+  supabase: SupabaseServerClient,
+): Promise<{ requestIds: Set<string>; error?: string }> {
+  const { data, error } = await supabase.rpc("list_assigned_request_ids");
+
+  if (error) {
+    return { requestIds: new Set(), error: error.message };
+  }
+
+  return { requestIds: new Set(data ?? []) };
+}
+
+/**
  * Loads everything an active responder dashboard needs in one place: approved
- * requests, this responder's acceptances, this responder's assignments, and the
- * victim contact details that RLS allows for requests the responder accepted.
+ * requests that are still available, this responder's acceptances, this
+ * responder's assignments, and the victim contact details that RLS allows for
+ * requests assigned to this responder.
  *
  * Every query also filters by `responder_id` as a second, request-scoped guard
  * on top of RLS. Another responder's acceptances and assignments are never
@@ -174,25 +192,31 @@ export async function getResponderWorkspace(
   responderId: string,
   approvedLimit = 50,
 ): Promise<ResponderWorkspace> {
-  const [approvedResult, acceptanceResult, assignmentResult] =
-    await Promise.all([
-      listApprovedRequests(supabase, approvedLimit),
-      supabase
-        .from("emergency_acceptances")
-        .select("*")
-        .eq("responder_id", responderId)
-        .order("accepted_at", { ascending: false }),
-      supabase
-        .from("emergency_assignments")
-        .select("*")
-        .eq("responder_id", responderId)
-        .order("assigned_at", { ascending: false }),
-    ]);
+  const [
+    approvedResult,
+    acceptanceResult,
+    assignmentResult,
+    assignedIdsResult,
+  ] = await Promise.all([
+    listApprovedRequests(supabase, approvedLimit),
+    supabase
+      .from("emergency_acceptances")
+      .select("*")
+      .eq("responder_id", responderId)
+      .order("accepted_at", { ascending: false }),
+    supabase
+      .from("emergency_assignments")
+      .select("*")
+      .eq("responder_id", responderId)
+      .order("assigned_at", { ascending: false }),
+    listAssignedRequestIds(supabase),
+  ]);
 
   const error =
     approvedResult.error ??
     acceptanceResult.error?.message ??
-    assignmentResult.error?.message;
+    assignmentResult.error?.message ??
+    assignedIdsResult.error;
 
   if (error) {
     return { ...EMPTY_WORKSPACE, error };
@@ -200,6 +224,10 @@ export async function getResponderWorkspace(
 
   const acceptances = acceptanceResult.data ?? [];
   const assignmentRows = assignmentResult.data ?? [];
+  const assignedRequestIds = assignedIdsResult.requestIds;
+  const availableApproved = approvedResult.requests.filter(
+    (request) => !assignedRequestIds.has(request.request_id),
+  );
   const assignmentRequestIds = [
     ...new Set(assignmentRows.map((assignment) => assignment.request_id)),
   ];
@@ -225,17 +253,7 @@ export async function getResponderWorkspace(
     ),
   );
 
-  const acceptedRequestIds = new Set(
-    acceptances.map((acceptance) => acceptance.request_id),
-  );
-
   const victimIds = new Set<string>();
-
-  for (const request of approvedResult.requests) {
-    if (acceptedRequestIds.has(request.request_id)) {
-      victimIds.add(request.victim_id);
-    }
-  }
 
   for (const request of assignedRequestsById.values()) {
     victimIds.add(request.victim_id);
@@ -254,7 +272,7 @@ export async function getResponderWorkspace(
   }
 
   return {
-    approved: approvedResult.requests,
+    approved: availableApproved,
     acceptances,
     assignments: assignmentRows.map((assignment) => ({
       assignment,

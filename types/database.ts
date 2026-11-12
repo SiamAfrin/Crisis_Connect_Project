@@ -163,7 +163,7 @@ export type Database = {
           {
             foreignKeyName: "emergency_assignments_request_id_fkey";
             columns: ["request_id"];
-            isOneToOne: false;
+            isOneToOne: true;
             referencedRelation: "emergency_requests";
             referencedColumns: ["request_id"];
           },
@@ -266,6 +266,10 @@ export type Database = {
           target_responder_id: string;
         };
         Returns: string;
+      };
+      list_assigned_request_ids: {
+        Args: Record<PropertyKey, never>;
+        Returns: string[];
       };
     };
     Enums: {

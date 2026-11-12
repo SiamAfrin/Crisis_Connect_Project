@@ -87,7 +87,7 @@ export async function createEmergencyRequestAction(
 
 function describeAcceptError(error: PostgrestError): string {
   if (error.code === "PGRST202") {
-    return "Request acceptance is not available yet. Apply the responder acceptance migration in Supabase, then try again.";
+    return "Request acceptance is not available yet. Apply the latest responder workflow migration in Supabase, then try again.";
   }
 
   if (error.code === "42501") {
@@ -96,6 +96,10 @@ function describeAcceptError(error: PostgrestError): string {
 
   if (error.code === "P0002") {
     return "That emergency request no longer exists. Refresh the page.";
+  }
+
+  if (error.code === "CC001") {
+    return "This request already has an assigned responder. Refresh the page to see the current state.";
   }
 
   if (error.code === "23505") {
@@ -114,7 +118,8 @@ function describeAcceptError(error: PostgrestError): string {
  *
  * The Server Action re-checks the active responder role, then calls a
  * SECURITY DEFINER function that derives the responder id from the session,
- * verifies the request is still approved, and rejects duplicate acceptances.
+ * verifies the request is still approved, rejects duplicate acceptances, and
+ * rejects acceptance once the request has an assigned responder.
  */
 export async function acceptEmergencyRequestAction(
   previousState: ActionState,

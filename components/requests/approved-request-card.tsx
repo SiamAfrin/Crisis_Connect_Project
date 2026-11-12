@@ -9,28 +9,21 @@ import type { AppEnums, Tables } from "@/types/database";
 import { AcceptRequestButton } from "./accept-request-button";
 import { AssignmentStatusBadge } from "./assignment-status-badge";
 
-type RequestVictimContact = Pick<
-  Tables<"profiles">,
-  "full_name" | "phone" | "address"
->;
-
 type ApprovedRequestCardProps = {
   request: Tables<"emergency_requests">;
   acceptedAt?: string | null;
   assignmentStatus?: AppEnums["assignment_status"] | null;
-  victim?: RequestVictimContact | null;
 };
 
 /**
  * An approved request as seen by an active responder. The accept action is
- * offered until the responder accepts; victim contact details are shown only
- * when the database has already allowed the responder to read that victim.
+ * offered until the responder accepts. Victim contact details are only shown on
+ * the assigned-request card, so unassigned responders cannot read them.
  */
 export function ApprovedRequestCard({
   request,
   acceptedAt,
   assignmentStatus,
-  victim,
 }: ApprovedRequestCardProps) {
   return (
     <article className="rounded-lg border border-line bg-white p-5">
@@ -62,22 +55,6 @@ export function ApprovedRequestCard({
           <dd>{formatAffectedPeople(request.affected_people)}</dd>
         </div>
       </dl>
-
-      {victim ? (
-        <div className="mt-4 rounded-lg border border-line bg-ink-50 px-4 py-3">
-          <p className="meta-label">Victim contact</p>
-          <p className="mt-1.5 text-sm font-semibold text-ink-950">
-            {victim.full_name}
-          </p>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-ink-600">
-            <span>{victim.phone}</span>
-            <span aria-hidden="true" className="text-ink-300">
-              ·
-            </span>
-            <span>{victim.address}</span>
-          </p>
-        </div>
-      ) : null}
 
       {acceptedAt ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">

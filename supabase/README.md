@@ -22,13 +22,16 @@ supabase/migrations/20261107000000_initial_schema.sql
 supabase/migrations/20261108000000_admin_responder_approval.sql
 supabase/migrations/20261109000000_admin_request_review.sql
 supabase/migrations/20261110000000_responder_acceptance_assignment.sql
+supabase/migrations/20261112000000_single_responder_assignment.sql
 ```
 
 The first creates the schema, policies, and grants. The second adds the
 administrator responder-approval function. The third adds the administrator
 emergency-request review function. The fourth adds responder acceptances, the
 victim-contact policy for accepted responders, and the acceptance and assignment
-functions.
+functions. The fifth is a corrective migration that limits each request to one
+assigned responder, adds row locking to the acceptance and assignment functions,
+and restricts victim contact to the assigned responder.
 
 ### Option A — Supabase Dashboard
 
@@ -102,14 +105,16 @@ where proname in (
   'review_responder_account',
   'review_emergency_request',
   'accept_emergency_request',
-  'assign_emergency_responder'
+  'assign_emergency_responder',
+  'list_assigned_request_ids'
 )
 order by proname;
 ```
 
-The function result should return four rows with `prosecdef = true`, confirming
-that the administrator approval, request review, request acceptance, and
-responder assignment functions exist and are `SECURITY DEFINER`.
+The function result should return five rows with `prosecdef = true`, confirming
+that the administrator approval, request review, request acceptance, responder
+assignment, and assigned-request lookup functions exist and are
+`SECURITY DEFINER`.
 
 Then call the application health route:
 
@@ -175,11 +180,14 @@ intentionally blocked. A missing table still reports `migration_required`.
   accepted an approved request.
 - Derives the responder from `auth.uid()`; the client never supplies a responder
   id.
-- Requires `public.is_active_responder()`, an existing request whose current
-  status is `approved`, and no previous acceptance by the same responder.
+- Locks the request row, then requires `public.is_active_responder()`, an
+  existing request whose current status is `approved`, no previous acceptance by
+  the same responder, and no existing assignment for the request.
+- Multiple different responders may accept the same request before an
+  administrator assigns it. Once an assignment exists, acceptance is rejected.
 - Returns the new `acceptance_id` and raises `42501` for non-responders, `P0002`
-  for missing requests, `22023` for non-approved requests, and `23505` for
-  duplicate acceptance.
+  for missing requests, `22023` for non-approved requests, `23505` for duplicate
+  acceptance, and `CC001` when the request already has an assigned responder.
 - Execute is granted to `authenticated`; authenticated users have no direct
   insert, update, or delete grant on `emergency_acceptances`.
 
@@ -187,16 +195,25 @@ intentionally blocked. A missing table still reports `migration_required`.
 
 - `SECURITY DEFINER` function that assigns a responder who already accepted the
   request.
-- Requires `public.is_admin()`, an existing approved request, an active
-  `volunteer` or `rescue_team_member` target, a matching acceptance row, and no
-  existing assignment for the same request and responder.
+- Locks the request row, then requires `public.is_admin()`, an existing approved
+  request with no existing assignment, an active `volunteer` or
+  `rescue_team_member` target, and a matching acceptance row.
 - Records `assigned_by = auth.uid()` and `assigned_at = now()`, starts the
   assignment at `pending`, and returns the new `assignment_id`.
 - Raises `42501` for non-administrators, `P0002` for missing requests or
   responders, `22023` for non-approved requests or ineligible responders, and
-  `23505` for duplicate assignments.
+  `CC001` when the request already has an assigned responder. A concurrent
+  unique violation also surfaces as `23505`.
 - Execute is granted to `authenticated`; authenticated users have no direct
   insert, update, or delete grant on `emergency_assignments`.
+
+### `list_assigned_request_ids()`
+
+- `SECURITY DEFINER` function that returns the ids of approved requests that
+  already have an assigned responder.
+- Returns only request ids, never responder identities, so responder dashboards
+  can hide the accept action without exposing who owns the request.
+- Raises `42501` for callers who are not active responders or administrators.
 
 ### `emergency_requests`
 
@@ -210,8 +227,8 @@ intentionally blocked. A missing table still reports `migration_required`.
 
 - UUID `assignment_id`.
 - Foreign keys to the request, responder, and assigning profile.
-- Unique `(request_id, responder_id)` constraint prevents duplicate
-  assignments.
+- Unique `request_id` constraint ensures a request has at most one assigned
+  responder.
 - Responder roles are limited to `volunteer` and `rescue_team_member`.
 - Assignment statuses: `pending`, `accepted`, `declined`, `cancelled`,
   `completed`.
@@ -232,10 +249,11 @@ intentionally blocked. A missing table still reports `migration_required`.
 
 - `profiles`: users read their own profile; active administrators read all
   profiles. Active responders can also read the contact details of victims whose
-  request they accepted, so victim contact information becomes available only
-  after acceptance. Users insert only their own profile and cannot self-register
-  as administrators or set an unsafe initial approval state. Column-level grants
-  restrict profile updates to `full_name`, `phone`, and `address`.
+  request is assigned to them, so victim contact information becomes available
+  only after assignment. Users insert only their own profile and cannot
+  self-register as administrators or set an unsafe initial approval state.
+  Column-level grants restrict profile updates to `full_name`, `phone`, and
+  `address`.
 - `profiles.account_status`: authenticated users have no direct update grant.
   Administrators approve or reject pending volunteer and rescue team accounts
   through `review_responder_account`, which re-checks the caller with
@@ -251,7 +269,7 @@ intentionally blocked. A missing table still reports `migration_required`.
   assignments for their requests, and administrators read all assignments.
   Assignment creation is reserved for `assign_emergency_responder`, which
   re-checks the administrator role, the approved request, the responder's active
-  status, and the responder's acceptance.
+  status, the responder's acceptance, and the absence of an existing assignment.
 - `emergency_acceptances`: responders read only their own acceptance rows and
   administrators read all of them. Acceptance creation is reserved for
   `accept_emergency_request`, which derives the responder from `auth.uid()` and
@@ -329,21 +347,28 @@ additional migration.
   active responder check and derives the responder from `auth.uid()`.
 - Only approved requests can be accepted. A unique `(request_id, responder_id)`
   constraint and an explicit existence check reject duplicate acceptance.
-- Multiple different responders may accept the same request.
+- Multiple different responders may accept the same request before assignment.
 - Accepting does not create an assignment. It only makes the responder eligible
   for administrator assignment.
-- Accepted responders gain read access to that victim's contact profile through
-  the additive `profiles` select policy. The policy requires active responder
-  status and a matching acceptance row.
+- Once an administrator assigns a responder, `accept_emergency_request` rejects
+  every other acceptance for that request.
+- Only the assigned responder gains read access to that victim's contact profile
+  through the `profiles` select policy. The policy requires active responder
+  status and a matching assignment row; administrators retain their existing
+  access.
 - Only active administrators can open `/admin/assignments` or call the
   assignment action. The queue lists approved requests that have at least one
   acceptance, with responder role, rescue category, Defence subcategory,
   acceptance time, and assignment status.
-- `assign_emergency_responder` requires an approved request, an active
-  volunteer/rescue target, and a matching acceptance row. It records
-  `assigned_by = auth.uid()` and `assigned_at = now()` and rejects duplicates.
+- `assign_emergency_responder` requires an approved request with no existing
+  assignment, an active volunteer/rescue target, and a matching acceptance row.
+  It records `assigned_by = auth.uid()` and `assigned_at = now()`.
+- A unique `request_id` constraint and a request-row lock enforce one assignment
+  per request, including concurrent administrator requests.
 - Responders see only their own assignments. RLS and the request-scoped
-  `responder_id` filter both enforce this.
+  `responder_id` filter both enforce this. Responder dashboards call
+  `list_assigned_request_ids` to hide the accept action for requests another
+  responder already owns, without exposing that responder's identity.
 - No service-role key is used.
 
 ## 11. Operational note

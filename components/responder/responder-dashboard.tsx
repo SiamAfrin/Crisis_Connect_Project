@@ -88,11 +88,6 @@ export function ResponderDashboard({
                     assignmentByRequest.get(request.request_id)
                       ?.assignment_status ?? null
                   }
-                  victim={
-                    acceptance
-                      ? (victimById.get(request.victim_id) ?? null)
-                      : null
-                  }
                 />
               );
             })}

@@ -26,7 +26,7 @@ export default async function AdminAssignmentsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Responder assignments"
-        description="Approved requests that responders have accepted appear here. Assign one or more accepted responders to each request."
+        description="Approved requests that responders have accepted appear here. Assign one accepted responder to each request; once assigned, the request stays visible but is closed to other responders."
       />
 
       {error ? (
@@ -43,6 +43,7 @@ export default async function AdminAssignmentsPage() {
           </h2>
           <p className="mt-1 text-sm text-ink-500">
             Only responders who accepted a request are eligible for assignment.
+            A request can have one assigned responder.
           </p>
         </div>
 
