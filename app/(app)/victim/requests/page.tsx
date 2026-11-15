@@ -20,16 +20,22 @@ export const instant = false;
 
 export default async function VictimRequestsPage() {
   const { supabase, profile } = await requireActiveRole("victim");
-  const { requests, error } = await listVictimRequests(
+  const { requests, assignments, error } = await listVictimRequests(
     supabase,
     profile.id,
+  );
+
+  const assignmentByRequest = new Map(
+    assignments.map(
+      (assignment) => [assignment.request_id, assignment] as const,
+    ),
   );
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Your requests"
-        description="Every request is reviewed by an administrator. Open one to see its status and details."
+        description="Every request is reviewed by an administrator. Open one to see its current status and details."
         actions={
           <Link href="/victim/requests/new" className={buttonSignal}>
             New request
@@ -61,7 +67,14 @@ export default async function VictimRequestsPage() {
       {requests.length > 0 ? (
         <section className="space-y-3" aria-label="Your emergency requests">
           {requests.map((request) => (
-            <RequestCard key={request.request_id} request={request} />
+            <RequestCard
+              key={request.request_id}
+              request={request}
+              assignmentStatus={
+                assignmentByRequest.get(request.request_id)
+                  ?.assignment_status ?? null
+              }
+            />
           ))}
         </section>
       ) : null}

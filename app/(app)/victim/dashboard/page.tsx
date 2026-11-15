@@ -20,17 +20,23 @@ export const instant = false;
 
 export default async function VictimDashboardPage() {
   const { supabase, profile } = await requireActiveRole("victim");
-  const { requests: recent, error } = await listVictimRequests(
+  const { requests: recent, assignments, error } = await listVictimRequests(
     supabase,
     profile.id,
     5,
+  );
+
+  const assignmentByRequest = new Map(
+    assignments.map(
+      (assignment) => [assignment.request_id, assignment] as const,
+    ),
   );
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Dashboard"
-        description="Your recent emergency requests and their review status."
+        description="Your recent emergency requests and their current status."
         actions={
           <Link href="/victim/requests/new" className={buttonSignal}>
             New emergency request
@@ -63,7 +69,7 @@ export default async function VictimDashboardPage() {
         {!error && recent.length === 0 ? (
           <EmptyState
             title="No emergency requests yet"
-            description="When you submit a request, it will appear here with its review status."
+            description="When you submit a request, it will appear here with its current status."
             action={
               <Link href="/victim/requests/new" className={buttonSignal}>
                 Create your first request
@@ -76,7 +82,14 @@ export default async function VictimDashboardPage() {
         {recent.length > 0 ? (
           <div className="space-y-3">
             {recent.map((request) => (
-              <RequestCard key={request.request_id} request={request} />
+              <RequestCard
+                key={request.request_id}
+                request={request}
+                assignmentStatus={
+                  assignmentByRequest.get(request.request_id)
+                    ?.assignment_status ?? null
+                }
+              />
             ))}
           </div>
         ) : null}

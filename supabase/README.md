@@ -23,6 +23,7 @@ supabase/migrations/20261108000000_admin_responder_approval.sql
 supabase/migrations/20261109000000_admin_request_review.sql
 supabase/migrations/20261110000000_responder_acceptance_assignment.sql
 supabase/migrations/20261112000000_single_responder_assignment.sql
+supabase/migrations/20261115000000_mission_status_updates.sql
 ```
 
 The first creates the schema, policies, and grants. The second adds the
@@ -31,7 +32,8 @@ emergency-request review function. The fourth adds responder acceptances, the
 victim-contact policy for accepted responders, and the acceptance and assignment
 functions. The fifth is a corrective migration that limits each request to one
 assigned responder, adds row locking to the acceptance and assignment functions,
-and restricts victim contact to the assigned responder.
+and restricts victim contact to the assigned responder. The sixth adds the
+mission status update function used by assigned responders.
 
 ### Option A — Supabase Dashboard
 
@@ -106,15 +108,16 @@ where proname in (
   'review_emergency_request',
   'accept_emergency_request',
   'assign_emergency_responder',
-  'list_assigned_request_ids'
+  'list_assigned_request_ids',
+  'update_mission_status'
 )
 order by proname;
 ```
 
-The function result should return five rows with `prosecdef = true`, confirming
+The function result should return six rows with `prosecdef = true`, confirming
 that the administrator approval, request review, request acceptance, responder
-assignment, and assigned-request lookup functions exist and are
-`SECURITY DEFINER`.
+assignment, assigned-request lookup, and mission status update functions exist
+and are `SECURITY DEFINER`.
 
 Then call the application health route:
 
@@ -215,6 +218,22 @@ intentionally blocked. A missing table still reports `migration_required`.
   can hide the accept action without exposing who owns the request.
 - Raises `42501` for callers who are not active responders or administrators.
 
+### `update_mission_status(target_assignment_id, new_status)`
+
+- `SECURITY DEFINER` function that lets the responder assigned to a mission
+  update its status.
+- Requires `public.is_active_responder()`, locks the assignment row, and checks
+  that the assignment's `responder_id` matches `auth.uid()`.
+- Accepts only `accepted` or `completed`. The supported transitions are
+  `pending` → `accepted` and `accepted` → `completed`; `completed` is terminal.
+- Sets `accepted_at` when the mission is accepted and preserves that timestamp
+  when the mission is completed.
+- Raises `42501` for non-responders or a responder who is not assigned to the
+  mission, `P0002` for a missing assignment, and `22023` for invalid or repeated
+  transitions.
+- Execute is granted to `authenticated`; authenticated users have no direct
+  update grant on `emergency_assignments`.
+
 ### `emergency_requests`
 
 - UUID `request_id`.
@@ -234,6 +253,9 @@ intentionally blocked. A missing table still reports `migration_required`.
   `completed`.
 - New assignments are created only through `assign_emergency_responder`, which
   records the assigning administrator and assignment time.
+- The assigned responder moves the mission from `pending` to `accepted` and from
+  `accepted` to `completed` through `update_mission_status`. Administrators and
+  other responders cannot change the status.
 
 ### `emergency_acceptances`
 
@@ -266,10 +288,15 @@ intentionally blocked. A missing table still reports `migration_required`.
   reject pending requests through `review_emergency_request`, which re-checks the
   caller with `public.is_admin()` and records the reviewer and review time.
 - `emergency_assignments`: responders read their own assignments, victims read
-  assignments for their requests, and administrators read all assignments.
-  Assignment creation is reserved for `assign_emergency_responder`, which
+  assignments for their requests, and administrators read all assignments. The
+  victim status view selects only the assignment status and timestamps, not the
+  assigned responder's identity. Assignment creation is reserved for
+  `assign_emergency_responder`, which
   re-checks the administrator role, the approved request, the responder's active
   status, the responder's acceptance, and the absence of an existing assignment.
+  Status changes are reserved for `update_mission_status`, which re-checks active
+  responder status and the assigned responder's identity. Authenticated users
+  have no direct update grant on the table.
 - `emergency_acceptances`: responders read only their own acceptance rows and
   administrators read all of them. Acceptance creation is reserved for
   `accept_emergency_request`, which derives the responder from `auth.uid()` and
@@ -371,7 +398,24 @@ additional migration.
   responder already owns, without exposing that responder's identity.
 - No service-role key is used.
 
-## 11. Operational note
+## 11. Mission status lifecycle
+
+- The assignment row is the mission record. New assignments start as `pending`.
+- Only the assigned responder can update the mission status. The Server Action
+  validates the assignment id and requested status, then calls
+  `update_mission_status`.
+- The function requires active responder status, locks the assignment row, and
+  checks that `responder_id = auth.uid()`. The responder id is never supplied by
+  the client.
+- Supported transitions are `pending` → `accepted` and `accepted` →
+  `completed`. A completed mission cannot be changed.
+- Accepting a mission sets `accepted_at`. Completing a mission preserves that
+  timestamp and sets `assignment_status = 'completed'`.
+- Responder dashboards refresh after the action, and the administrator
+  assignment page shows the current status and acceptance time.
+- No service-role key is used.
+
+## 12. Operational note
 
 No service-role key is configured for this project. The application therefore
 cannot delete Auth users or bypass RLS from server code. If a test or abandoned

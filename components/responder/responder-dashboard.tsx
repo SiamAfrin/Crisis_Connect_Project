@@ -99,7 +99,8 @@ export function ResponderDashboard({
         <div>
           <h2 className="text-lg font-semibold text-ink-950">Your assignments</h2>
           <p className="mt-1 text-sm text-ink-500">
-            Requests an administrator has assigned to you.
+            Requests an administrator has assigned to you. Accept a mission when
+            you begin and mark it completed when you finish.
           </p>
         </div>
 

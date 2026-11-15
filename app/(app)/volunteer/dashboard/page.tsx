@@ -19,7 +19,7 @@ export default async function VolunteerDashboardPage() {
   return (
     <ResponderDashboard
       roleTitle="Volunteer dashboard"
-      intro="Accept approved requests when you can respond, then check this page for assignments."
+      intro="Accept approved requests when you can respond, then accept and complete your assigned missions here."
       workspace={workspace}
     />
   );

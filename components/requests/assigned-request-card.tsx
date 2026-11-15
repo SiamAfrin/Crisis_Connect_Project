@@ -7,6 +7,7 @@ import {
 import type { Tables } from "@/types/database";
 
 import { AssignmentStatusBadge } from "./assignment-status-badge";
+import { MissionStatusControls } from "./mission-status-controls";
 
 type RequestVictimContact = Pick<
   Tables<"profiles">,
@@ -36,6 +37,11 @@ export function AssignedRequestCard({
           <p className="text-xs font-medium text-ink-500">
             Assigned {formatDateTime(assignment.assigned_at)}
           </p>
+          {assignment.accepted_at ? (
+            <p className="mt-0.5 text-xs text-ink-500">
+              Accepted {formatDateTime(assignment.accepted_at)}
+            </p>
+          ) : null}
           <h3 className="mt-1 text-base font-semibold text-ink-950">
             {request ? request.emergency_type : "Emergency request"}
           </h3>
@@ -96,6 +102,11 @@ export function AssignedRequestCard({
           The request details are not available for this assignment.
         </p>
       )}
+
+      <MissionStatusControls
+        assignmentId={assignment.assignment_id}
+        status={assignment.assignment_status}
+      />
     </article>
   );
 }

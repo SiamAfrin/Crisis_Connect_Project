@@ -3,6 +3,8 @@ import "server-only";
 import type { SupabaseServerClient } from "@/lib/supabase/server";
 import type { Tables } from "@/types/database";
 
+import type { VictimRequestAssignment } from "./status";
+
 export type EmergencyRequestRow = Tables<"emergency_requests">;
 
 export type RequestStats = {
@@ -20,14 +22,45 @@ const EMPTY_STATS: RequestStats = {
 };
 
 /**
- * Lists a victim's own requests. RLS already limits rows to the signed-in
- * victim; the explicit `victim_id` filter is a second, request-scoped guard.
+ * Reads assignment and mission status for a victim's own requests. RLS limits
+ * assignment rows to the victim's requests; the explicit request ids are a
+ * second, request-scoped guard. Only the status and timestamps are selected, so
+ * the victim view never needs the responder's identity.
+ */
+export async function listVictimRequestAssignments(
+  supabase: SupabaseServerClient,
+  requestIds: string[],
+): Promise<{ assignments: VictimRequestAssignment[]; error?: string }> {
+  if (requestIds.length === 0) {
+    return { assignments: [] };
+  }
+
+  const { data, error } = await supabase
+    .from("emergency_assignments")
+    .select("request_id, assignment_status, assigned_at, accepted_at")
+    .in("request_id", requestIds);
+
+  if (error) {
+    return { assignments: [], error: error.message };
+  }
+
+  return { assignments: data ?? [] };
+}
+
+/**
+ * Lists a victim's own requests with their current assignment/mission status.
+ * RLS already limits request rows to the signed-in victim; the explicit
+ * `victim_id` filter is a second, request-scoped guard.
  */
 export async function listVictimRequests(
   supabase: SupabaseServerClient,
   victimId: string,
   limit = 100,
-): Promise<{ requests: EmergencyRequestRow[]; error?: string }> {
+): Promise<{
+  requests: EmergencyRequestRow[];
+  assignments: VictimRequestAssignment[];
+  error?: string;
+}> {
   const { data, error } = await supabase
     .from("emergency_requests")
     .select("*")
@@ -36,10 +69,20 @@ export async function listVictimRequests(
     .limit(limit);
 
   if (error) {
-    return { requests: [], error: error.message };
+    return { requests: [], assignments: [], error: error.message };
   }
 
-  return { requests: data ?? [] };
+  const requests = data ?? [];
+  const assignmentResult = await listVictimRequestAssignments(
+    supabase,
+    requests.map((request) => request.request_id),
+  );
+
+  if (assignmentResult.error) {
+    return { requests: [], assignments: [], error: assignmentResult.error };
+  }
+
+  return { requests, assignments: assignmentResult.assignments };
 }
 
 /**
@@ -63,6 +106,28 @@ export async function getVictimRequest(
   }
 
   return { request: data };
+}
+
+/**
+ * Reads the assignment/mission status for one of the victim's own requests.
+ * RLS limits assignment rows to the victim's requests. The caller only invokes
+ * this after confirming the request belongs to the signed-in victim.
+ */
+export async function getVictimRequestAssignment(
+  supabase: SupabaseServerClient,
+  requestId: string,
+): Promise<{ assignment: VictimRequestAssignment | null; error?: string }> {
+  const { data, error } = await supabase
+    .from("emergency_assignments")
+    .select("request_id, assignment_status, assigned_at, accepted_at")
+    .eq("request_id", requestId)
+    .maybeSingle();
+
+  if (error) {
+    return { assignment: null, error: error.message };
+  }
+
+  return { assignment: data };
 }
 
 /**

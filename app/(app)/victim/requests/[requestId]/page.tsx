@@ -2,13 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { RequestStatusBadge } from "@/components/requests/request-status-badge";
 import { SeverityBadge } from "@/components/requests/severity-badge";
+import {
+  VictimRequestStatusBadge,
+  VictimRequestStatusPanel,
+} from "@/components/requests/victim-request-status";
 import { buttonSecondary } from "@/components/ui/button";
 import { ArrowLeftIcon } from "@/components/ui/icons";
 import { requireActiveRole } from "@/lib/auth/dal";
 import { EMERGENCY_SEVERITY_LABELS } from "@/lib/constants";
-import { getVictimRequest } from "@/lib/requests/data";
+import {
+  getVictimRequest,
+  getVictimRequestAssignment,
+} from "@/lib/requests/data";
 import {
   formatAffectedPeople,
   formatDateTime,
@@ -26,27 +32,6 @@ export const instant = false;
 type RequestDetailPageProps = {
   params: Promise<{ requestId: string }>;
 };
-
-const statusCopy = {
-  pending: {
-    title: "Awaiting administrator review",
-    detail:
-      "Your request is queued for review. Responder assignment cannot begin until an administrator approves it.",
-    className: "border-amber-200 bg-amber-50 text-amber-950",
-  },
-  approved: {
-    title: "Request approved",
-    detail:
-      "An administrator approved this request. Verified responders can now accept it, and an administrator will assign the responder for the response.",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-950",
-  },
-  rejected: {
-    title: "Request not approved",
-    detail:
-      "This request was not approved. Contact an administrator if you believe the decision should be reviewed.",
-    className: "border-signal-200 bg-signal-50 text-signal-950",
-  },
-} as const;
 
 export default async function RequestDetailPage({
   params,
@@ -94,7 +79,14 @@ export default async function RequestDetailPage({
     notFound();
   }
 
-  const copy = statusCopy[request.request_status];
+  const { assignment, error: assignmentError } =
+    await getVictimRequestAssignment(supabase, request.request_id);
+
+  // `undefined` means the assignment status could not be loaded, which is
+  // different from `null` (no responder assigned yet).
+  const assignmentStatus = assignmentError
+    ? undefined
+    : (assignment?.assignment_status ?? null);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -118,7 +110,10 @@ export default async function RequestDetailPage({
           </div>
           <div className="flex flex-wrap gap-2">
             <SeverityBadge severity={request.severity} />
-            <RequestStatusBadge status={request.request_status} />
+            <VictimRequestStatusBadge
+              requestStatus={request.request_status}
+              assignmentStatus={assignmentStatus}
+            />
           </div>
         </div>
       </header>
@@ -175,11 +170,11 @@ export default async function RequestDetailPage({
         </section>
 
         <aside>
-          <section className={`rounded-lg border p-6 ${copy.className}`}>
-            <h2 className="text-sm font-semibold">Review status</h2>
-            <p className="mt-2 text-base font-semibold">{copy.title}</p>
-            <p className="mt-2 text-sm leading-6">{copy.detail}</p>
-          </section>
+          <VictimRequestStatusPanel
+            requestStatus={request.request_status}
+            assignmentStatus={assignmentStatus}
+            assignment={assignment}
+          />
         </aside>
       </div>
     </div>

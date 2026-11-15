@@ -271,6 +271,13 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: string[];
       };
+      update_mission_status: {
+        Args: {
+          target_assignment_id: string;
+          new_status: Database["public"]["Enums"]["assignment_status"];
+        };
+        Returns: Database["public"]["Enums"]["assignment_status"];
+      };
     };
     Enums: {
       user_role: "victim" | "volunteer" | "rescue_team_member" | "administrator";

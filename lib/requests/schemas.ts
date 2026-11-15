@@ -59,4 +59,21 @@ export const requestIdSchema = z
   .trim()
   .regex(UUID_PATTERN, "Invalid request reference.");
 
+export const MISSION_STATUS_VALUES = ["accepted", "completed"] as const;
+
+const missionStatusSchema = z.enum(MISSION_STATUS_VALUES, {
+  message: "Choose a valid mission status.",
+});
+
+export const updateMissionStatusSchema = z.object({
+  assignmentId: z
+    .string()
+    .trim()
+    .regex(UUID_PATTERN, "Invalid mission reference."),
+  status: missionStatusSchema,
+});
+
 export type CreateRequestInput = z.infer<typeof createRequestSchema>;
+export type UpdateMissionStatusInput = z.infer<
+  typeof updateMissionStatusSchema
+>;

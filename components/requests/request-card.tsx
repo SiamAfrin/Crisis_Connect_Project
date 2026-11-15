@@ -4,18 +4,28 @@ import {
   formatAffectedPeople,
   formatDateTime,
 } from "@/lib/requests/format";
-import type { Tables } from "@/types/database";
+import { getVictimRequestStatus } from "@/lib/requests/status";
+import type { AppEnums, Tables } from "@/types/database";
 
 import { MapPinIcon, UsersIcon } from "@/components/ui/icons";
 
-import { RequestStatusBadge } from "./request-status-badge";
 import { SeverityBadge } from "./severity-badge";
+import { VictimRequestStatusBadge } from "./victim-request-status";
 
 type RequestCardProps = {
   request: Tables<"emergency_requests">;
+  assignmentStatus?: AppEnums["assignment_status"] | null;
 };
 
-export function RequestCard({ request }: RequestCardProps) {
+export function RequestCard({
+  request,
+  assignmentStatus,
+}: RequestCardProps) {
+  const status = getVictimRequestStatus(
+    request.request_status,
+    assignmentStatus,
+  );
+
   return (
     <Link
       href={`/victim/requests/${request.request_id}`}
@@ -32,12 +42,19 @@ export function RequestCard({ request }: RequestCardProps) {
         </div>
         <div className="flex flex-wrap gap-1.5">
           <SeverityBadge severity={request.severity} />
-          <RequestStatusBadge status={request.request_status} />
+          <VictimRequestStatusBadge
+            requestStatus={request.request_status}
+            assignmentStatus={assignmentStatus}
+          />
         </div>
       </div>
 
       <p className="mt-3 line-clamp-2 text-sm leading-6 text-ink-600">
         {request.description}
+      </p>
+
+      <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-xs leading-5 text-ink-600">
+        {status.summary}
       </p>
 
       <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-line-soft pt-3 text-xs text-ink-500">

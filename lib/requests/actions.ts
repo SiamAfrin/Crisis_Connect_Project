@@ -11,7 +11,11 @@ import {
 } from "@/lib/auth/action-state";
 import { requireActiveResponder, requireActiveRole } from "@/lib/auth/dal";
 
-import { createRequestSchema, requestIdSchema } from "./schemas";
+import {
+  createRequestSchema,
+  requestIdSchema,
+  updateMissionStatusSchema,
+} from "./schemas";
 
 function readString(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -150,6 +154,82 @@ export async function acceptEmergencyRequestAction(
     status: "success",
     message:
       "You accepted this emergency request. An administrator can now assign you.",
+    revision: previousState.revision + 1,
+  };
+}
+
+function describeMissionStatusError(
+  error: PostgrestError,
+  requestedStatus: "accepted" | "completed",
+): string {
+  if (error.code === "PGRST202") {
+    return "Mission status updates are not available yet. Apply the latest mission status migration in Supabase, then try again.";
+  }
+
+  if (error.code === "42501") {
+    return "Only the responder assigned to this mission can update its status.";
+  }
+
+  if (error.code === "P0002") {
+    return "That mission no longer exists. Refresh the page.";
+  }
+
+  if (error.code === "22023") {
+    return requestedStatus === "completed"
+      ? "This mission cannot be completed right now. Refresh the page to see its current status."
+      : "This mission cannot be accepted right now. Refresh the page to see its current status.";
+  }
+
+  return "The mission status could not be updated. Please try again.";
+}
+
+/**
+ * Updates the status of the mission assigned to the signed-in responder.
+ *
+ * The Server Action re-checks the active responder role, validates the
+ * assignment id and requested status, then calls a SECURITY DEFINER function
+ * that derives the caller from the session and requires the caller to be the
+ * responder assigned to that mission. Only `accepted` and `completed` are
+ * accepted, and a completed mission cannot be changed again.
+ */
+export async function updateMissionStatusAction(
+  previousState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { supabase } = await requireActiveResponder();
+
+  const parsed = updateMissionStatusSchema.safeParse({
+    assignmentId: readString(formData, "assignmentId"),
+    status: readString(formData, "status"),
+  });
+
+  if (!parsed.success) {
+    return invalidState(parsed.error, previousState.revision);
+  }
+
+  const { error } = await supabase.rpc("update_mission_status", {
+    target_assignment_id: parsed.data.assignmentId,
+    new_status: parsed.data.status,
+  });
+
+  if (error) {
+    return errorState(
+      describeMissionStatusError(error, parsed.data.status),
+      previousState.revision,
+    );
+  }
+
+  revalidatePath("/volunteer/dashboard");
+  revalidatePath("/rescue/dashboard");
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/assignments");
+
+  return {
+    status: "success",
+    message:
+      parsed.data.status === "completed"
+        ? "Mission marked as completed. Administrators can see the updated status."
+        : "Mission accepted. Administrators can see that you are responding.",
     revision: previousState.revision + 1,
   };
 }

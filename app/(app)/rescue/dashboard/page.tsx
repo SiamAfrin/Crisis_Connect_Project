@@ -31,7 +31,7 @@ export default async function RescueDashboardPage() {
   return (
     <ResponderDashboard
       roleTitle="Rescue team dashboard"
-      intro="Accept approved requests your team can handle, then check this page for assignments."
+      intro="Accept approved requests your team can handle, then accept and complete your assigned missions here."
       categoryLabel={categoryLabel}
       subcategoryLabel={subcategoryLabel}
       workspace={workspace}

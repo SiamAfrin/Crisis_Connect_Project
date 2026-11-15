@@ -3,7 +3,11 @@
 Crisis Connect is a centralized emergency response and coordination system for
 victims, volunteers, rescue team members, and administrators. Victims submit
 emergency requests, administrators review them, verified responders accept
-approved requests, and administrators assign the responders who accepted.
+approved requests, and administrators assign one accepted responder to each
+request. The assigned responder then accepts and completes the mission, and
+administrators see the updated mission status. Victims can follow the current
+status of their own requests from review through responder assignment and
+mission completion.
 
 ## Stack
 
@@ -63,12 +67,12 @@ approved requests, and administrators assign the responders who accepted.
 | `/login` | Public | Email/password login |
 | `/account-status` | Authenticated | Pending, active, or rejected account status |
 | `/profile` | Authenticated | Edit full name, phone, and address |
-| `/victim/dashboard` | Active victim | Victim dashboard with request summary |
+| `/victim/dashboard` | Active victim | Victim dashboard with request and mission status |
 | `/victim/requests` | Active victim | List and track the victim's own requests |
 | `/victim/requests/new` | Active victim | Submit an emergency request |
-| `/victim/requests/[requestId]` | Active victim | Request details and review status |
-| `/volunteer/dashboard` | Active volunteer | Accept approved requests and view own assignments |
-| `/rescue/dashboard` | Active rescue team member | Accept approved requests and view own assignments |
+| `/victim/requests/[requestId]` | Active victim | Request details and current status |
+| `/volunteer/dashboard` | Active volunteer | Accept approved requests, update mission status, and view own assignments |
+| `/rescue/dashboard` | Active rescue team member | Accept approved requests, update mission status, and view own assignments |
 | `/admin/dashboard` | Active administrator | Administrator dashboard with approval, request, and assignment summaries |
 | `/admin/responders` | Active administrator | Review and approve or reject responder registrations |
 | `/admin/requests` | Active administrator | Review and approve or reject emergency requests |
@@ -122,8 +126,8 @@ approved requests, and administrators assign the responders who accepted.
   `victim_id` filter both enforce ownership.
 - Requests are read-only after submission. There is no update or delete grant
   for victims, so review decisions remain under administrator control.
-- The victim dashboard shows request counts by status and the five most recent
-  submissions.
+- The victim dashboard shows the five most recent submissions; the full list is
+  available at `/victim/requests`.
 - Only **active administrators** can open `/admin/requests` or call the review
   action. Pending requests appear oldest first with the victim's contact details.
 - **Approve** sets the request to **Approved**; **Reject** sets it to
@@ -149,20 +153,72 @@ approved requests, and administrators assign the responders who accepted.
   requests are refused.
 - Accepting does not assign the responder. It makes the responder eligible for
   administrator assignment.
-- Responders see victim contact details only for requests they have accepted,
+- Responders see victim contact details only for requests assigned to them,
   through a dedicated RLS policy. Contact details are not exposed for
-  unaccepted requests.
+  unaccepted or unassigned requests.
 - Only **active administrators** can open `/admin/assignments` or call the
   assignment action. The page lists approved requests with their accepted
-  responders.
+  responders. Once a request is assigned, it remains visible with the assigned
+  responder and no assign action.
 - Only responders who **accepted that request** and are still **active** can be
   assigned. The function re-checks both conditions.
-- The same responder cannot be assigned to the same request twice. Multiple
-  different responders may be assigned to one request.
+- A request can have at most one assigned responder. Multiple responders may
+  accept before assignment, but the first successful assignment closes the
+  request to every other responder.
+- A unique `request_id` constraint and a request-row lock enforce one assignment
+  per request, including concurrent administrator requests.
 - The assigning administrator and assignment time are recorded by the database.
   New assignments start with the `pending` assignment status.
 - Responders see only their own assignments; RLS and the request-scoped query
-  filter both enforce this.
+  filter both enforce this. Their dashboard also hides approved requests that
+  already have an assigned responder by calling `list_assigned_request_ids`,
+  without revealing which responder was assigned.
+
+## Mission status behavior
+
+- An assignment is the mission record for an emergency request. New assignments
+  start with the `pending` status.
+- Only the **assigned responder** can update that mission's status. Other
+  responders, victims, administrators, and anonymous users cannot call the
+  update function.
+- The supported transitions are `pending` → `accepted` and `accepted` →
+  `completed`. A completed mission is terminal.
+- **Accept mission** records the responder's acceptance time and marks the
+  mission `accepted`. **Mark as completed** closes the mission and marks it
+  `completed`.
+- Status changes are applied by the `SECURITY DEFINER` function
+  `update_mission_status`. It derives the caller from the session, locks the
+  assignment row, and re-checks that the caller is the assigned active responder.
+  Authenticated users still have no direct update grant on
+  `emergency_assignments`.
+- Responder dashboards refresh after a status change. Administrators see the
+  current assignment status and acceptance time on `/admin/assignments`.
+- Mission status updates do not change the emergency request's review status or
+  the one-responder-per-request rule.
+
+## Victim request status behavior
+
+- Victims can see the current status of their own requests on
+  `/victim/dashboard`, `/victim/requests`, and
+  `/victim/requests/[requestId]`.
+- The displayed status combines the administrator review status with the actual
+  assignment/mission status:
+  - **Awaiting review** — the request is still pending administrator review.
+  - **Not approved** — the request was rejected.
+  - **Awaiting responder** — the request is approved but no responder is assigned.
+  - **Responder assigned** — a responder is assigned but has not started the
+    mission.
+  - **Responder responding** — the assigned responder accepted the mission.
+  - **Mission completed** — the assigned responder completed the mission.
+  - **Response closed** — a legacy declined or cancelled assignment is present.
+- The detail page also shows the raw review status, mission status, assignment
+  time, and acceptance time when available.
+- Victims read assignment rows only for their own requests through RLS. The
+  victim queries select only the assignment status and timestamps; responder
+  identity is not selected or displayed.
+- The status is derived from the same request and assignment rows used by the
+  administrator and responder views, so it stays consistent with review,
+  assignment, and mission updates.
 
 ## Protected routes and authorization
 
@@ -174,8 +230,8 @@ Protection is layered:
 3. Each role dashboard and request page independently requires the correct
    active role.
 4. Server Actions re-check the session and active role before profile updates,
-   request submission, responder review decisions, request acceptance, or
-   responder assignment.
+   request submission, responder review decisions, request acceptance, responder
+   assignment, or mission status updates.
 5. RLS policies and column-level grants block direct privilege changes,
    cross-victim request access, and other responders' acceptance or assignment
    rows.
@@ -196,12 +252,12 @@ app/
     account-status/page.tsx       Account status page
     profile/page.tsx              Profile page
     victim/
-      dashboard/page.tsx          Victim dashboard with request summary
-      requests/page.tsx           Victim request list
+      dashboard/page.tsx          Victim dashboard with request and mission status
+      requests/page.tsx           Victim request list with current status
       requests/new/page.tsx       New emergency request form
-      requests/[requestId]/page.tsx Request details and review status
-    volunteer/dashboard/page.tsx  Volunteer accept/assignment dashboard
-    rescue/dashboard/page.tsx     Rescue team accept/assignment dashboard
+      requests/[requestId]/page.tsx Request details and current status
+    volunteer/dashboard/page.tsx  Volunteer accept, mission status, and assignment dashboard
+    rescue/dashboard/page.tsx     Rescue team accept, mission status, and assignment dashboard
     admin/
       dashboard/page.tsx          Administrator dashboard with approval, request, and assignment summaries
       responders/page.tsx         Responder approval queue
@@ -217,7 +273,7 @@ components/
   admin/                          Responder approval, request review, and assignment cards
   auth/                           Login and registration forms
   profile/                        Profile edit form
-  requests/                       Request forms, victim/responder cards, accept actions, and badges
+  requests/                       Request forms, victim/responder cards, victim status panels, accept and mission status actions, and badges
   responder/                      Shared responder dashboard
   ui/                             Icons, buttons, logo, fields, alerts, badges, headers, and cards
 lib/
@@ -234,10 +290,11 @@ lib/
     routes.ts                     Role destinations and safe redirects
     schemas.ts                    Zod validation schemas
   requests/
-    actions.ts                    Emergency request submission and acceptance Server Actions
+    actions.ts                    Emergency request submission, acceptance, and mission status Server Actions
     data.ts                       Victim, responder workspace, and assignment queries
     format.ts                     Date and number formatting
     schemas.ts                    Request validation and id checks
+    status.ts                     Victim-facing request and mission status derivation
   constants.ts                    Role, category, status, and severity constants
   supabase/
     client.ts                     Browser Supabase client
@@ -245,12 +302,15 @@ lib/
     health.ts                     Connection and schema checks
     server.ts                     Request-scoped server Supabase client
 proxy.ts                          Session refresh and optimistic redirects
+TESTING_REPORT.md                 Chunk 6 testing report and manual test matrix
 supabase/
   migrations/
     20261107000000_initial_schema.sql
     20261108000000_admin_responder_approval.sql
     20261109000000_admin_request_review.sql
     20261110000000_responder_acceptance_assignment.sql
+    20261112000000_single_responder_assignment.sql
+    20261115000000_mission_status_updates.sql
   README.md                       Migration, auth settings, and RLS notes
 types/
   database.ts                     Typed Supabase database schema
@@ -265,6 +325,12 @@ types/
 | `npm run start`     | Run the production build                     |
 | `npm run lint`      | Run ESLint                                   |
 | `npm run typecheck` | Run TypeScript without emitting files        |
+
+## Testing
+
+No automated test runner is configured. Verification uses `npm run typecheck`,
+`npm run lint`, and `npm run build`, plus the manual and live checks recorded in
+[`TESTING_REPORT.md`](TESTING_REPORT.md).
 
 ## Security notes
 
@@ -283,10 +349,14 @@ types/
   function that requires an active administrator and a pending request.
 - Victims can read only their own requests; administrators can read all
   requests; active responders can read approved requests.
+- Victims can read the assignment/mission status for their own requests through
+  the existing assignment RLS policy. The victim status queries select only
+  status and timestamps, not the assigned responder's identity.
 - Emergency requests have no victim update or delete grant, so submitted
   details and review fields cannot be changed from the client.
-- The same responder cannot be assigned to the same request more than once, and
-  the same responder cannot accept the same request more than once.
+- A request can have at most one assigned responder, enforced by a unique
+  `request_id` constraint and request-row locking. The same responder cannot
+  accept the same request more than once.
 - Request, acceptance, and assignment reads are limited by role and relationship.
 - Acceptance is applied by a `SECURITY DEFINER` function that derives the
   responder from the session and requires active responder status and an
@@ -294,6 +364,10 @@ types/
 - Assignment is applied by a `SECURITY DEFINER` function that requires an active
   administrator, an approved request, an active responder, and a matching
   acceptance, and records the assigning administrator and time.
+- Mission status is updated only through a `SECURITY DEFINER` function that
+  requires an active responder, locks the assignment row, and confirms the
+  caller is the responder assigned to that mission. The function only allows
+  `pending` → `accepted` → `completed`.
 - Victim contact details are readable by a responder only after that responder
-  accepted the victim's request.
+  is assigned to the victim's request.
 - The Supabase service role key is not used by the application.

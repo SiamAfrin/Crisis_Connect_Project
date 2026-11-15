@@ -185,6 +185,11 @@ export function EmergencyAssignmentCard({
                         <p className="text-xs text-ink-500">
                           Assigned {formatDateTime(assignment.assigned_at)}
                         </p>
+                        {assignment.accepted_at ? (
+                          <p className="text-xs text-ink-500">
+                            Accepted {formatDateTime(assignment.accepted_at)}
+                          </p>
+                        ) : null}
                       </>
                     ) : assignedResponder ? (
                       <span className="text-xs text-ink-500">Not assigned</span>
