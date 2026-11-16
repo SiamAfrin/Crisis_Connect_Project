@@ -45,6 +45,10 @@ function buildNavItems(profile: Tables<"profiles">): AppNavItem[] {
           href: "/admin/assignments",
           label: "Assignments",
         },
+        {
+          href: "/admin/reports",
+          label: "Reports",
+        },
       );
     }
 

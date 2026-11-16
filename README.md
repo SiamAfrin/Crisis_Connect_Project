@@ -82,6 +82,8 @@ see whether a person has been found.
 | `/admin/responders` | Active administrator | Review and approve or reject responder registrations |
 | `/admin/requests` | Active administrator | Review and approve or reject emergency requests |
 | `/admin/assignments` | Active administrator | Assign accepted responders and monitor rescue mission statuses |
+| `/admin/reports` | Active administrator | Generate emergency request and rescue activity reports |
+| `/admin/reports/export` | Active administrator | Download the selected report as CSV |
 | `/api/health/supabase` | Public | Supabase Auth and schema health check |
 
 ## Authentication and account behavior
@@ -299,6 +301,34 @@ see whether a person has been found.
 - Monitoring is request-based. It does not add real-time updates, websockets,
   push notifications, or live responder tracking.
 
+## Administrator reports behavior
+
+- Only **active administrator** accounts can open `/admin/reports` or download a
+  report from `/admin/reports/export`. Both handlers re-check the role on the
+  server, and every read uses the administrator's RLS-protected session.
+- PB-17 provides two basic reports:
+  - **Emergency request report** — requests submitted in the selected period,
+    filtered by `created_at`, with totals by review status and severity, a
+    breakdown by emergency type, and one row per request.
+  - **Rescue activity report** — missions assigned in the selected period,
+    filtered by `assigned_at`, with totals by mission status, unique responder
+    and victim counts, and one row per assignment.
+- **From** and **To** are optional, inclusive calendar dates in Bangladesh
+  Standard Time (UTC+6). Leaving both blank reports on all records. Invalid or
+  reversed dates show a validation message and no report is generated.
+- Report rows and summaries come directly from `emergency_requests`,
+  `emergency_assignments`, and the related `profiles` names. No sample or
+  hard-coded values are used.
+- **Download CSV** exports the same filtered records with the same labels and
+  Bangladesh timestamps. The file is UTF-8 with a BOM, and user-supplied values
+  that look like spreadsheet formulas are prefixed so they cannot execute.
+- A single report is capped at 1,000 matching records. The page discloses when
+  the cap is reached and the CSV contains the same first 1,000 records; narrowing
+  the period produces complete totals.
+- Reports are generated when the page or export is requested. They are not
+  real-time, are not scheduled, and do not include missing-person records
+  because PB-17 covers emergency requests and rescue activities only.
+
 ## Protected routes and authorization
 
 Protection is layered:
@@ -343,6 +373,8 @@ app/
       responders/page.tsx         Responder approval queue
       requests/page.tsx           Emergency request review queue
       assignments/page.tsx        Assignment queue and rescue mission status monitor
+      reports/page.tsx            Generated emergency request and rescue activity reports
+      reports/export/route.ts     CSV download for the selected report
     missing-persons/
       page.tsx                    Missing person search and list
       new/page.tsx                Missing person report form
@@ -385,6 +417,13 @@ lib/
     format.ts                     Date and number formatting
     schemas.ts                    Request validation and id checks
     status.ts                     Victim-facing request and mission status derivation
+  reports/
+    csv.ts                        Spreadsheet-safe CSV escaping and serialization
+    csv-reports.ts                Report-specific CSV headers, labels, and timestamps
+    data.ts                       Date-filtered request and rescue activity report queries
+    params.ts                     Report type, date range, and filename handling
+    summarize.ts                  Emergency request and rescue activity summaries
+    types.ts                      Report row and summary types
   constants.ts                    Role, category, status, and severity constants
   supabase/
     client.ts                     Browser Supabase client
@@ -393,8 +432,12 @@ lib/
     server.ts                     Request-scoped server Supabase client
 proxy.ts                          Session refresh and optimistic redirects
 tests/
+  admin-mission-filters.test.ts   Mission monitor filter and count formatting checks
   missing-person-photo.test.ts    Optional-photo validation and both submission paths
-TESTING_REPORT.md                 Chunks 6–9 testing report and manual test matrix
+  report-csv.test.ts              CSV escaping, formula neutralization, and line endings
+  report-params.test.ts           Report date range, type, and filename validation
+  report-summaries.test.ts        Emergency and rescue summary accuracy
+TESTING_REPORT.md                 Chunks 6–11 testing report and manual test matrix
 supabase/
   migrations/
     20261107000000_initial_schema.sql

@@ -553,7 +553,28 @@ additional migration.
   by `assignment_status = 'completed'`; no separate completion timestamp column
   exists, so the monitor does not display one.
 
-## 15. Operational note
+## 15. Report queries (Chunk 11)
+
+- PB-17 adds no tables, columns, functions, grants, or policies, and no migration
+  is required. It adds administrator-only read queries, a report page, and a CSV
+  export route.
+- The emergency request report filters `emergency_requests.created_at` by the
+  selected inclusive Bangladesh calendar-day range. The rescue activity report
+  filters `emergency_assignments.assigned_at` the same way. Empty bounds leave
+  that side of the period unrestricted.
+- Both reports read only their existing tables plus `profiles` names for the
+  victim and assigned responder. Every query runs with the request-scoped
+  administrator session, so the existing RLS policies remain the row boundary.
+- Report queries are bounded to 1,000 rows. Summaries and CSV exports are
+  computed from the same fetched rows, and the page discloses when the cap is
+  reached.
+- CSV output is UTF-8 with a BOM. User-supplied values that start with a
+  spreadsheet formula character are prefixed so they cannot execute when the
+  file is opened.
+- Reports are generated on request. No scheduled job, real-time subscription, or
+  stored report table was added.
+
+## 16. Operational note
 
 No service-role key is configured for this project. The application therefore
 cannot delete Auth users or bypass RLS from server code. If a test or abandoned

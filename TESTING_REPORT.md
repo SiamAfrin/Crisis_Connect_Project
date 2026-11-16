@@ -1017,3 +1017,150 @@ severity count uses the current request table.
 - The dashboard issues multiple exact count queries. This is appropriate for the
   current project scale; a much larger dataset would benefit from database
   aggregate views or an RPC added in a later, separately approved chunk.
+
+---
+
+# Chunk 11 — PB-17: Basic reports
+
+**Date:** 17 November 2026
+
+**Scope:** PB-17 only. Active administrators can generate a basic **emergency
+request report** and a basic **rescue activity report**, filter either by an
+inclusive Bangladesh-time date range, and download the same records as CSV. No
+Chunk 12 work, PB-16 rework, schema change, migration, real-time feature, or
+excluded feature was added.
+
+## Result summary
+
+| Check | Result |
+| --- | --- |
+| TypeScript (`tsc --noEmit`) | Pass |
+| ESLint (`eslint .`) | Pass |
+| Automated tests (`node --test tests`) | 44 passed, 0 failed |
+| Production build (`next build`) | Pass — 24/24 pages generated |
+
+## Implemented behavior
+
+### Report generation
+
+`/admin/reports` requires an active administrator and offers two reports:
+
+- **Emergency request report** — requests whose `created_at` falls in the
+  selected period. Shows total, pending, approved, rejected, severity totals, a
+  breakdown by emergency type, and one row per request with submission time,
+  type, severity, status, location, affected people, and victim name.
+- **Rescue activity report** — missions whose `assigned_at` falls in the selected
+  period. Shows total, completed, in-progress, awaiting-start, declined,
+  cancelled, unique responder, and unique victim counts, plus one row per
+  mission with assignment and acceptance times, status, request details,
+  responder, and victim.
+
+Every value comes from `emergency_requests`, `emergency_assignments`, and related
+`profiles` rows read through the administrator's RLS session. No sample or
+hard-coded report data is used.
+
+### Date range
+
+- **From** and **To** are optional, inclusive calendar dates in Bangladesh
+  Standard Time (UTC+6).
+- A start date becomes 00:00 Bangladesh time; an end date covers 23:59:59.999
+  Bangladesh time.
+- Blank bounds report on all records.
+- Malformed dates, impossible dates such as 30 February, and a start date after
+  the end date produce a validation message and no report is generated.
+
+### CSV download
+
+- **Download CSV** exports the same filtered rows with the same labels and
+  Bangladesh timestamps.
+- The file is UTF-8 with a BOM so Excel detects the encoding.
+- Values that begin with a spreadsheet formula character are prefixed with an
+  apostrophe so user-entered locations and names cannot execute as formulas.
+- The attachment filename is built only from validated report values.
+
+### Authorization and data access
+
+- `/admin/reports` and `/admin/reports/export` both call
+  `requireActiveRole("administrator")` on the server.
+- All reads use the request-scoped Supabase client and existing RLS; no
+  service-role key is used.
+- Reports expose only administrator-visible data. Victim and responder names are
+  included for the report, but no phone numbers, email addresses, or addresses.
+- No report writes, updates, or deletes any record.
+
+## Database changes
+
+**None.** PB-17 required only read queries over the existing schema. No migration
+file was created or applied, and no SQL was executed. Existing indexes cover
+request submission time and status; mission rows are ordered by `assigned_at`,
+which has no dedicated index, but the 1,000-row report cap keeps the query
+bounded at the current project scale.
+
+## New files
+
+| File | Purpose |
+| --- | --- |
+| `app/(app)/admin/reports/page.tsx` | Administrator report generator and report tables. |
+| `app/(app)/admin/reports/export/route.ts` | Administrator-only CSV download. |
+| `lib/reports/params.ts` | Report type, Bangladesh date-range parsing, row cap, and filenames. |
+| `lib/reports/types.ts` | Report row and summary types. |
+| `lib/reports/csv.ts` | Dependency-free CSV escaping and serialization. |
+| `lib/reports/csv-reports.ts` | Report CSV headers, labels, and timestamps. |
+| `lib/reports/summarize.ts` | Emergency request and rescue activity summaries. |
+| `lib/reports/data.ts` | Date-filtered report queries and joins. |
+| `tests/report-params.test.ts` | Nine date-range, type, and filename tests. |
+| `tests/report-csv.test.ts` | Five CSV escaping and serialization tests. |
+| `tests/report-summaries.test.ts` | Five summary accuracy tests. |
+
+## Modified files
+
+| File | Change |
+| --- | --- |
+| `components/app-shell.tsx` | Added the administrator **Reports** navigation item. |
+| `README.md` | Documented report routes, behavior, limits, and structure. |
+| `supabase/README.md` | Documented the read-only report queries and no schema change. |
+| `TESTING_REPORT.md` | Added this Chunk 11 report. |
+
+## Verification
+
+| Check | Result |
+| --- | --- |
+| `node .\node_modules\typescript\bin\tsc --noEmit` | Pass |
+| `node .\node_modules\eslint\bin\eslint.js .` | Pass |
+| `node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests` | 44 passed, 0 failed |
+| `node .\node_modules\next\dist\bin\next build` | Pass — 24/24 pages generated |
+
+## Manual verification checklist
+
+1. Sign in as an active administrator and confirm **Reports** appears in the
+   navigation, then open `/admin/reports`.
+2. Generate the emergency request report with both dates blank and confirm the
+   totals match the request table and the listed records.
+3. Repeat with a known start and end date and confirm only requests inside that
+   inclusive Bangladesh-time period appear.
+4. Enter a start date after the end date; confirm the validation message and no
+   report.
+5. Request `?from=2026-02-30`; confirm the impossible date is rejected.
+6. Switch to the rescue activity report and confirm status counts, unique
+   responder and victim counts, assignment and acceptance times, and rows.
+7. Download the CSV for both reports; open in a spreadsheet and confirm the
+   columns, labels, Bangladeshi timestamps, and UTF-8 text.
+8. Submit a request whose location begins with `=` (for example `=1+1`) and
+   confirm the CSV cell starts with `'` instead of running as a formula.
+9. Confirm `/admin/reports` and `/admin/reports/export` redirect a victim,
+   volunteer, rescue team member, pending, or rejected account away.
+10. Confirm generating and downloading reports changes no database record.
+
+## Limitations
+
+- A report reads at most 1,000 matching rows. Summaries and CSV exports cover
+  those rows, and the page discloses when the cap is reached; narrowing the
+  period produces complete totals.
+- Rescue activities are filtered by assignment time. The schema has no separate
+  completion timestamp, so the report shows `assigned_at`, `accepted_at`, and the
+  mission status; it does not claim when a mission was completed.
+- Reports are generated on request; there are no scheduled, stored, emailed, or
+  real-time reports, and no charts.
+- Reports intentionally cover emergency requests and rescue activities only.
+  Missing-person records are not part of PB-17.
+- CSV is the only export format; PDF and spreadsheet formats were not added.
