@@ -851,3 +851,169 @@ Chunk 10/PB-16 was not started.
 | `components/missing-persons/missing-person-form.tsx` | Hint now says “Use Bangladesh time (BST, UTC+6)”. |
 | `tests/missing-person-timestamp.test.ts` | New conversion and input-parsing coverage. |
 | `TESTING_REPORT.md` | Added this addendum. |
+
+---
+
+# Chunk 10 — PB-16: Administrator monitoring dashboard
+
+**Date:** 16 November 2026
+
+**Scope:** PB-16 only. Administrators can monitor emergency requests, users,
+rescue missions and their statuses, emergency counts, and completed mission and
+missing-person records. No PB-17 reporting, real-time updates, live responder
+tracking, schema change, or migration was added.
+
+## Result summary
+
+| Check | Result |
+| --- | --- |
+| TypeScript (`tsc --noEmit`) | Pass |
+| ESLint (`eslint .`) | Pass |
+| Automated tests (`node --test tests`) | 25 passed, 0 failed |
+| Production build (`next build`) | Pass — 22/22 pages generated |
+
+## Implemented behavior
+
+### Administrator monitoring dashboard
+
+`/admin/dashboard` now requires an active administrator and shows current
+database counts from the request-scoped Supabase client:
+
+- **Emergency requests:** pending, approved, rejected, and total counts, plus a
+  breakdown by low, medium, high, and critical severity.
+- **Users:** total accounts, victims, volunteers, rescue team members,
+  administrators, active responders, responder accounts awaiting approval, and
+  rejected responder accounts.
+- **Rescue missions:** assignments awaiting start, in progress, completed,
+  closed, and total, plus the newest active and completed mission records.
+- **Missing persons:** missing, found, and total counts, plus the five most
+  recently found reports.
+- **Action queues:** links to responder approvals, emergency request review,
+  responder assignments, and missing persons.
+- **Recent activity:** the five newest emergency requests across all review
+  statuses.
+
+Every number comes from a Supabase count or list query. No sample, seeded, or
+hard-coded statistics are displayed.
+
+### Mission monitoring
+
+`/admin/assignments` now includes:
+
+- A mission status summary for awaiting start, in progress, completed, closed,
+  and total missions.
+- Filters for **All missions**, **Awaiting start**, **In progress**,
+  **Completed**, and **Closed**.
+- Mission cards showing the emergency request, assigned responder, victim
+  contact details, request severity, assignment time, mission acceptance time,
+  and current mission status.
+- The existing accepted-request assignment queue remains available so
+  administrators can still assign an accepted responder.
+
+Completed missions remain readable as records. The page does not add an
+administrator mission-status write path; `update_mission_status` remains
+restricted to the assigned active responder.
+
+### Missing-person and completed-record visibility
+
+- Found missing-person reports are linked from the dashboard.
+- `/missing-persons?status=found` lists resolved records.
+- Administrators can open a report to mark it found or reopen it, using the
+  existing PB-15 status controls.
+- No missing-person or mission record is deleted.
+
+## Authorization and data security
+
+- Both changed pages call `requireActiveRole("administrator")`.
+- Every read uses the request-scoped Supabase client and existing RLS:
+  - administrators may read all profiles, emergency requests, assignments,
+    acceptances, and missing-person reports;
+  - no service-role key is used;
+  - no policy, grant, function, table, or column was changed.
+- The mission monitor cannot change mission status, assign a second responder,
+  edit requests, or delete records.
+- Dashboard counts and lists are limited to what the current administrator
+  session can read through RLS.
+- No real-time subscriptions, websockets, or live tracking were added. The data
+  refreshes when the page is requested.
+
+## Database changes
+
+**None.** PB-16 required only read queries over the existing schema. No migration
+file was created or applied, and no SQL was executed. Existing indexes cover
+profile role/account status, request review status, and assignment status; the
+severity count uses the current request table.
+
+## New files
+
+| File | Purpose |
+| --- | --- |
+| `components/admin/admin-stat-card.tsx` | Real count card used by the dashboard and mission monitor. |
+| `components/admin/admin-mission-card.tsx` | Full and compact mission record cards with request, responder, victim, and status. |
+| `lib/admin/mission-filters.ts` | Mission filter normalization and status mapping, including the closed group. |
+| `tests/admin-mission-filters.test.ts` | Six tests for filter normalization, status grouping, and count formatting. |
+
+## Modified files
+
+| File | Change |
+| --- | --- |
+| `lib/admin/data.ts` | Added user, severity, and mission counts; recent request query; mission list query; shared victim attachment helper. |
+| `lib/admin/format.ts` | Added grouped count formatting. |
+| `lib/missing-persons/data.ts` | Added lightweight found-report summaries for monitoring. |
+| `app/(app)/admin/dashboard/page.tsx` | Replaced the queue-only dashboard with the PB-16 monitoring dashboard. |
+| `app/(app)/admin/assignments/page.tsx` | Added mission counts, status filters, and mission record cards. |
+| `README.md` | Documented monitoring routes, counts, mission monitor, and limitations. |
+| `supabase/README.md` | Documented that PB-16 is read-only and adds no schema objects. |
+| `components/README.md` | Documented the new monitoring components. |
+| `TESTING_REPORT.md` | Added this Chunk 10 report. |
+
+## Verification
+
+| Check | Result |
+| --- | --- |
+| `node .\node_modules\typescript\bin\tsc --noEmit` | Pass |
+| `node .\node_modules\eslint\bin\eslint.js .` | Pass |
+| `node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests` | 25 passed, 0 failed |
+| `node .\node_modules\next\dist\bin\next build` | Pass — 22/22 pages generated |
+
+## Manual verification checklist
+
+1. Sign in as an active administrator and open `/admin/dashboard`.
+2. Confirm every count matches the corresponding Supabase table filtered by the
+   same status or role.
+3. Confirm pending, approved, and rejected request counts and the severity
+   breakdown update after a request is reviewed or submitted.
+4. Confirm volunteer, rescue team, active responder, pending, and rejected counts
+   match the profiles table.
+5. Confirm mission counts match `emergency_assignments.assignment_status`.
+6. Confirm the newest active and completed missions appear and link to the
+   mission monitor.
+7. Open `/admin/assignments` and test each status filter, including closed.
+8. Confirm a completed mission shows its request, responder, victim, assignment
+   time, mission acceptance time, and completed status.
+9. Confirm the accepted-request assignment queue still assigns a responder.
+10. Confirm found missing-person reports open from the dashboard and can be
+    marked found or reopened by an administrator.
+11. Sign in as a victim, volunteer, rescue team member, pending account, or
+    rejected account and confirm `/admin/dashboard` and
+    `/admin/assignments` redirect away.
+12. Confirm no administrator action can change or delete a mission record or
+    missing-person record from these pages.
+
+## Limitations
+
+- Mission completion time is not stored separately. The monitor shows
+  `assigned_at`, `accepted_at`, and the `completed` status; it does not claim a
+  completion timestamp.
+- Lists are capped at 100 rows, consistent with the existing admin pages. Counts
+  reflect all rows visible through RLS.
+- No pagination, date-range filtering, charts, CSV export, or generated reports
+  were added. Those are PB-17 scope and were intentionally not implemented.
+- Monitoring is request-based, not real-time. Real-time dashboard updates and
+  live responder tracking remain excluded.
+- Administrators cannot edit or delete completed missions or missing-person
+  records. Mission status stays responder-controlled, and missing-person records
+  retain the existing found/reopen workflow.
+- The dashboard issues multiple exact count queries. This is appropriate for the
+  current project scale; a much larger dataset would benefit from database
+  aggregate views or an RPC added in a later, separately approved chunk.

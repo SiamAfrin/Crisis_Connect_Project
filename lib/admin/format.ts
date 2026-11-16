@@ -13,3 +13,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
 export function formatRegistrationDate(value: string): string {
   return `${dateTimeFormatter.format(new Date(value))} BST`;
 }
+
+const numberFormatter = new Intl.NumberFormat("en-US");
+
+export function formatCount(value: number): string {
+  return numberFormatter.format(value);
+}

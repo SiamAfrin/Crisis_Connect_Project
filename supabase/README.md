@@ -533,7 +533,27 @@ additional migration.
 - Apply the photo migration after `20261116000000_missing_person_management.sql`.
   It is additive and does not rerun the earlier migration.
 
-## 14. Operational note
+## 14. Administrator monitoring (Chunk 10)
+
+- PB-16 adds no tables, columns, functions, grants, or policies. It adds
+  administrator-only read queries and pages.
+- `/admin/dashboard` counts emergency requests by review status and severity,
+  profiles by role and responder account status, assignments by mission status,
+  and missing person reports by status. The counts use PostgREST `count: "exact"`
+  with the request-scoped administrator session, so RLS applies to every query.
+- `/admin/assignments` lists assignment rows across all mission statuses,
+  including completed and legacy closed records, with an optional status filter.
+- The mission monitor reads the existing `emergency_assignments`,
+  `emergency_requests`, and `profiles` tables. Administrators still cannot update
+  mission status; `update_mission_status` remains restricted to the assigned
+  active responder.
+- Monitoring is loaded when the page request runs. There are no real-time
+  subscriptions, websockets, or live responder tracking.
+- A mission row stores `assigned_at` and `accepted_at`. Completion is represented
+  by `assignment_status = 'completed'`; no separate completion timestamp column
+  exists, so the monitor does not display one.
+
+## 15. Operational note
 
 No service-role key is configured for this project. The application therefore
 cannot delete Auth users or bypass RLS from server code. If a test or abandoned

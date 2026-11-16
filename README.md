@@ -78,10 +78,10 @@ see whether a person has been found.
 | `/missing-persons/[reportId]` | Active authenticated users | Missing person details and status |
 | `/volunteer/dashboard` | Active volunteer | Accept approved requests, update mission status, and view own assignments |
 | `/rescue/dashboard` | Active rescue team member | Accept approved requests, update mission status, and view own assignments |
-| `/admin/dashboard` | Active administrator | Administrator dashboard with approval, request, assignment, and missing person summaries |
+| `/admin/dashboard` | Active administrator | Administrator monitoring dashboard with emergency, user, mission, and missing person counts |
 | `/admin/responders` | Active administrator | Review and approve or reject responder registrations |
 | `/admin/requests` | Active administrator | Review and approve or reject emergency requests |
-| `/admin/assignments` | Active administrator | Assign accepted responders to approved requests |
+| `/admin/assignments` | Active administrator | Assign accepted responders and monitor rescue mission statuses |
 | `/api/health/supabase` | Public | Supabase Auth and schema health check |
 
 ## Authentication and account behavior
@@ -268,6 +268,37 @@ see whether a person has been found.
 - Missing person reports do not create emergency requests, assignments, or
   missions. They are a separate community-search record.
 
+## Administrator monitoring behavior
+
+- Only **active administrator** accounts can open `/admin/dashboard` or
+  `/admin/assignments`. Both pages re-check the role on the server, and the
+  underlying reads remain protected by RLS.
+- `/admin/dashboard` shows current database counts, not sample or seeded
+  statistics:
+  - emergency requests by review status and severity;
+  - registered users by role, plus active, pending, and rejected responder
+    accounts;
+  - rescue missions by assignment status, including completed and legacy closed
+    records;
+  - missing person reports by status.
+- The dashboard keeps the four action queues for responder approvals, emergency
+  request review, responder assignments, and missing person records.
+- Recent emergency requests show the five newest submissions across every review
+  status. Active missions show the newest pending or accepted assignments.
+- `/admin/assignments` lists the assignment queue and a mission monitor with
+  filters for **All missions**, **Awaiting start**, **In progress**,
+  **Completed**, and **Closed**. Each mission card shows the request, assigned
+  responder, victim contact, and current mission status.
+- Completed mission records are retained and can be reviewed; administrators
+  cannot change mission status because `update_mission_status` is reserved for
+  the assigned responder. The database stores the assignment and
+  mission-acceptance times; it does not store a separate completion timestamp.
+- Found missing-person records are listed on the dashboard and can be filtered in
+  `/missing-persons?status=found`. Administrators mark a report found or reopen
+  it from the report detail page.
+- Monitoring is request-based. It does not add real-time updates, websockets,
+  push notifications, or live responder tracking.
+
 ## Protected routes and authorization
 
 Protection is layered:
@@ -308,10 +339,10 @@ app/
     volunteer/dashboard/page.tsx  Volunteer accept, mission status, and assignment dashboard
     rescue/dashboard/page.tsx     Rescue team accept, mission status, and assignment dashboard
     admin/
-      dashboard/page.tsx          Administrator dashboard with approval, request, assignment, and missing person summaries
+      dashboard/page.tsx          Administrator monitoring dashboard with real counts and recent records
       responders/page.tsx         Responder approval queue
       requests/page.tsx           Emergency request review queue
-      assignments/page.tsx        Accepted-request assignment queue
+      assignments/page.tsx        Assignment queue and rescue mission status monitor
     missing-persons/
       page.tsx                    Missing person search and list
       new/page.tsx                Missing person report form
@@ -323,7 +354,7 @@ app/
 components/
   app-nav.tsx                     Role-aware application navigation
   app-shell.tsx                   Protected header, navigation, and logout
-  admin/                          Responder approval, request review, and assignment cards
+  admin/                          Monitoring stats, mission cards, responder approval, request review, and assignment cards
   auth/                           Login and registration forms
   missing-persons/                Missing person form, photo, cards, status badge, and status controls
   profile/                        Profile edit form
@@ -333,8 +364,8 @@ components/
 lib/
   admin/
     actions.ts                    Responder approval, request review, and assignment Server Actions
-    data.ts                       Responder, request, acceptance, and assignment queries and counts
-    format.ts                     Registration date formatting
+    data.ts                       Responder, request, user, acceptance, assignment, and mission queries and counts
+    format.ts                     Count and registration date formatting
     schemas.ts                    Review and assignment validation
   auth/
     actions.ts                    Registration, login, logout, profile actions

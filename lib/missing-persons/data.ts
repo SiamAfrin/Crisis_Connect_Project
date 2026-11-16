@@ -188,3 +188,46 @@ export async function getMissingPersonCounts(
     },
   };
 }
+
+export type MissingPersonSummary = Pick<
+  Tables<"missing_persons">,
+  | "report_id"
+  | "full_name"
+  | "last_seen_location"
+  | "status"
+  | "created_at"
+  | "resolved_at"
+>;
+
+/**
+ * Lists lightweight report summaries for the administrator monitoring
+ * dashboard. Photographs and descriptions are deliberately omitted here so the
+ * dashboard does not need to sign Storage URLs just to show a record list.
+ */
+export async function listMissingPersonSummaries(
+  supabase: SupabaseServerClient,
+  {
+    status,
+    limit = 5,
+  }: {
+    status: AppEnums["missing_person_status"];
+    limit?: number;
+  },
+): Promise<{ reports: MissingPersonSummary[]; error?: string }> {
+  const { data, error } = await supabase
+    .from("missing_persons")
+    .select(
+      "report_id, full_name, last_seen_location, status, created_at, resolved_at",
+    )
+    .eq("status", status)
+    .order(status === "found" ? "resolved_at" : "created_at", {
+      ascending: false,
+    })
+    .limit(limit);
+
+  if (error) {
+    return { reports: [], error: error.message };
+  }
+
+  return { reports: data ?? [] };
+}

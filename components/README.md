@@ -4,9 +4,9 @@ Reusable React components belong in this directory.
 
 Organisation:
 
-- `components/ui/` — buttons, fields, badges, icons, page headers, stat cards, and other layout primitives.
+- `components/ui/` — buttons, fields, badges, icons, page headers, and other layout primitives.
 - `components/auth/` — registration and login forms.
-- `components/admin/` — responder approval, request review, and assignment cards and actions.
+- `components/admin/` — monitoring stat cards, mission cards, responder approval, request review, and assignment cards and actions.
 - `components/missing-persons/` — missing person report form, optional photo field and display, cards, status badge, and status controls.
 - `components/requests/` — emergency request forms, victim and responder cards, victim status panels, accept and mission status actions, assignment cards, and status badges.
 - `components/responder/` — the shared responder dashboard.
