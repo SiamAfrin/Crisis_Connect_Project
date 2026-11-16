@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { RequestCard } from "@/components/requests/request-card";
-import { buttonSignal } from "@/components/ui/button";
+import { buttonSecondary, buttonSignal } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/form";
 import { ArrowRightIcon } from "@/components/ui/icons";
@@ -38,10 +38,15 @@ export default async function VictimDashboardPage() {
         title="Dashboard"
         description="Your recent emergency requests and their current status."
         actions={
-          <Link href="/victim/requests/new" className={buttonSignal}>
-            New emergency request
-            <ArrowRightIcon aria-hidden="true" className="size-4" />
-          </Link>
+          <>
+            <Link href="/missing-persons/new" className={buttonSecondary}>
+              Report missing person
+            </Link>
+            <Link href="/victim/requests/new" className={buttonSignal}>
+              New emergency request
+              <ArrowRightIcon aria-hidden="true" className="size-4" />
+            </Link>
+          </>
         }
       />
 

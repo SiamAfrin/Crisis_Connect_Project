@@ -179,3 +179,44 @@ export const EMERGENCY_TYPE_SUGGESTIONS = [
   "Water shortage",
   "Other",
 ] as const;
+
+export const MISSING_PERSON_STATUS_LABELS: Readonly<
+  Record<AppEnums["missing_person_status"], string>
+> = {
+  missing: "Missing",
+  found: "Found",
+};
+
+export const MISSING_PERSON_GENDER_LABELS: Readonly<
+  Record<AppEnums["missing_person_gender"], string>
+> = {
+  female: "Female",
+  male: "Male",
+  other: "Other",
+  unknown: "Unknown",
+};
+
+export const MISSING_PERSON_GENDER_OPTIONS: ReadonlyArray<
+  Option<AppEnums["missing_person_gender"]>
+> = [
+  {
+    value: "unknown",
+    label: "Unknown",
+    description: "Use this when the gender is not known.",
+  },
+  {
+    value: "female",
+    label: "Female",
+    description: "Female.",
+  },
+  {
+    value: "male",
+    label: "Male",
+    description: "Male.",
+  },
+  {
+    value: "other",
+    label: "Other",
+    description: "Another gender description.",
+  },
+];

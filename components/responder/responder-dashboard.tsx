@@ -1,5 +1,8 @@
+import Link from "next/link";
+
 import { ApprovedRequestCard } from "@/components/requests/approved-request-card";
 import { AssignedRequestCard } from "@/components/requests/assigned-request-card";
+import { buttonSecondary } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
@@ -43,6 +46,11 @@ export function ResponderDashboard({
       <PageHeader
         title={roleTitle}
         description={intro}
+        actions={
+          <Link href="/missing-persons/new" className={buttonSecondary}>
+            Report missing person
+          </Link>
+        }
         meta={
           categoryText ? (
             <p className="text-xs text-ink-500">{categoryText}</p>

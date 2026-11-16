@@ -1,4 +1,4 @@
-# Crisis Connect — Testing Report (Chunks 6–8)
+# Crisis Connect — Testing Report (Chunks 6–9)
 
 **Date:** 12 November 2026
 **Scope:** Testing, security review, bug fixing, and documentation for the
@@ -552,3 +552,302 @@ policy or grant was changed in Chunk 8.
 | `supabase/README.md` | Documented the victim status read scope. |
 | `components/README.md` | Documented the victim status components. |
 | `TESTING_REPORT.md` | Added this Chunk 8 addendum. |
+
+## 14. Chunk 9 addendum — missing person management
+
+**Date:** 15 November 2026
+**Scope:** PB-13, PB-14, and PB-15 missing person management.
+
+**Constraints observed:** One new migration file was written but was not executed
+against Supabase. No users, missing person reports, requests, assignments, or
+other records were created, modified, or deleted. No destructive SQL was run. No
+secret was read or exposed. No commit or push was performed.
+
+> **Correction (16 November 2026):** This section records the original Chunk 9
+> implementation, which allowed only active victims to submit and had no photo
+> support. Those statements are superseded by the correction addendum at the end
+> of this report. The current implementation allows every active registered role
+> and supports an optional private photo.
+
+### Executed checks
+
+| Check | Result |
+| --- | --- |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run build` | Pass |
+| Missing person validation checks | 18 passed, 0 failed |
+| Missing person SQL and authorization static checks | 35 passed, 0 failed |
+| Live authenticated browser E2E | Not performed — no real test accounts were available |
+| Migration executed against live Supabase | No — pending manual review and application |
+
+The validation checks covered valid submission, optional age, invalid age,
+empty and over-length names, invalid gender, empty and over-length descriptions,
+empty and over-length last seen locations, future and impossible last seen
+times, non-ISO last seen times, valid and invalid report ids, and valid and
+invalid status updates.
+
+The static checks confirmed that:
+
+- The migration enables RLS on `missing_persons`.
+- The select policy covers active victims, active responders, and active
+  administrators.
+- The insert policy requires the caller to be the reporter, an active victim,
+  and a missing unresolved report.
+- The last-seen constraint permits only a five-minute clock skew after creation.
+- `update_missing_person_status` is `SECURITY DEFINER`, uses an empty
+  `search_path`, locks the report row, rejects a null status, and allows only
+  the reporter or an administrator to update it.
+- Only administrators can reopen a found report.
+- There is no direct update or delete grant and no anonymous select grant.
+- The directory filters by status and searches full name and last seen location.
+- Search input is sanitized before it is used in the PostgREST `or` filter,
+  including commas, parentheses, wildcard characters, backslashes, and quotes.
+- The list and detail pages require an active account; the new report page
+  requires an active victim.
+- The detail page loads reporter contact only when the viewer is the reporter or
+  an administrator.
+- The create action requires an active victim and derives the reporter from the
+  session; the status action requires an active account and calls the RPC.
+- Navigation, the proxy matcher, and the protected route prefixes include
+  `/missing-persons`.
+- The database types include the table, both enums, and the RPC.
+
+The production build generated `/missing-persons`, `/missing-persons/new`, and
+`/missing-persons/[reportId]` in addition to the existing routes.
+
+### Migration notes
+
+`supabase/migrations/20261116000000_missing_person_management.sql` adds:
+
+- The `missing_person_status` and `missing_person_gender` enums.
+- The `missing_persons` table, constraints, indexes, and `updated_at` trigger.
+- RLS select and insert policies.
+- The `update_missing_person_status` `SECURITY DEFINER` function.
+- Column grants that exclude status, resolution, and audit columns.
+
+It reuses the existing `is_active_victim`, `is_active_responder`, `is_admin`, and
+`set_updated_at` helpers. It does not change existing tables, policies, or
+functions.
+
+### Manual steps still required
+
+1. Review and apply
+   `supabase/migrations/20261116000000_missing_person_management.sql` in the
+   Supabase SQL Editor or with the Supabase CLI.
+2. Sign in as an active victim; open `/missing-persons/new` and submit a report.
+3. Confirm the report appears in `/missing-persons` with the **Missing** status.
+4. Search by name and by last seen location; confirm the matching report appears.
+5. Filter by **Found** and **All**; confirm the list changes correctly.
+6. As the reporter, open the report and mark it **Found**; confirm the status and
+   found time update and the report leaves the default missing list.
+7. As an administrator, reopen the found report; confirm it returns to
+   **Missing** and the resolution fields are cleared.
+8. As another active victim or a responder, confirm the report details are
+   visible but the reporter's name and phone are not.
+9. As a pending or rejected responder, confirm `/missing-persons` redirects to
+   `/account-status`.
+10. Confirm an anonymous request to `/missing-persons` redirects to `/login`.
+11. Confirm a direct authenticated update or delete on `missing_persons` is
+    denied by the column grants and RLS.
+
+### Chunk 9 files
+
+| File | Change |
+| --- | --- |
+| `supabase/migrations/20261116000000_missing_person_management.sql` | New enums, table, RLS policies, grants, and status RPC. |
+| `types/database.ts` | Added the missing person table, enums, relationships, and RPC types. |
+| `lib/constants.ts` | Added missing person status, gender labels, and gender options. |
+| `lib/auth/dal.ts` | Added `requireActiveAccount` for shared active-user pages. |
+| `lib/auth/routes.ts` | Added `/missing-persons` to the protected route prefixes. |
+| `proxy.ts` | Added `/missing-persons` to the session matcher. |
+| `lib/missing-persons/schemas.ts` | New report and status validation. |
+| `lib/missing-persons/data.ts` | New search, detail, reporter, and count queries. |
+| `lib/missing-persons/actions.ts` | New report submission and status Server Actions. |
+| `components/missing-persons/missing-person-form.tsx` | New missing person report form. |
+| `components/missing-persons/missing-person-card.tsx` | New search result card. |
+| `components/missing-persons/missing-person-status-badge.tsx` | New missing/found badge. |
+| `components/missing-persons/missing-person-status-controls.tsx` | New mark-found and reopen controls. |
+| `app/(app)/missing-persons/page.tsx` | New search and list page. |
+| `app/(app)/missing-persons/new/page.tsx` | New victim report page. |
+| `app/(app)/missing-persons/[reportId]/page.tsx` | New detail and status page. |
+| `components/app-shell.tsx` | Added the Missing persons navigation item for active users. |
+| `app/(app)/victim/dashboard/page.tsx` | Added a report-missing-person action. |
+| `app/(app)/admin/dashboard/page.tsx` | Added missing person counts and a queue link. |
+| `README.md` | Documented missing person behavior, routes, structure, and security notes. |
+| `supabase/README.md` | Documented the migration, schema, RLS, and lifecycle. |
+| `components/README.md` | Documented the missing person components. |
+| `TESTING_REPORT.md` | Added this Chunk 9 addendum. |
+
+---
+
+# Chunk 9 correction — optional photo and all-active-user submission
+
+**Date:** 16 November 2026
+
+**Scope:** PB-13 correction only. The report form now supports an optional
+photograph, and every active registered role can submit a report. PB-14, PB-15,
+the existing status controls, reporter-contact privacy, and administrator reopen
+behavior are unchanged. Chunk 10/PB-16 was not started.
+
+**Constraints observed:** No database SQL was executed, no migration was applied,
+no data was deleted, no excluded feature was added, and no commit or push was
+performed.
+
+## Result summary
+
+| Check | Result |
+| --- | --- |
+| TypeScript (`tsc --noEmit`) | Pass |
+| ESLint (`eslint .`) | Pass |
+| Production build (`next build`) | Pass |
+| Automated photo/submission tests (`node --test tests`) | 13 passed, 0 failed |
+| Migration `20261117000000_missing_person_photo_and_active_user_submission.sql` | Created, not applied |
+| Live authenticated browser E2E | Not executed — no real test accounts were available |
+
+## Automated coverage
+
+`tests/missing-person-photo.test.ts` imports the real validation modules with
+Node's TypeScript stripping and covers:
+
+- Report text fields validate without a photo field.
+- A missing file input plans a report with `photo_path = NULL`.
+- An untouched browser file input plans a report with `photo_path = NULL`.
+- An empty-string photo field (multipart-decoded untouched input) plans a report with `photo_path = NULL`.
+- The server-decoded untouched input (`File` named `"undefined"`) plans a report with `photo_path = NULL`.
+- Valid PNG, JPEG, and WebP files plan uploads with the correct extension.
+- A non-image MIME type is rejected.
+- A renamed non-image file is rejected by its signature.
+- An empty image file is rejected.
+- A file larger than 5 MB is rejected.
+- A non-file form value is rejected.
+
+The suite does not replace live Storage/RLS testing. It verifies the decision
+logic for both submission paths; the manual matrix below verifies the actual
+Supabase Storage and RLS behavior.
+
+## Manual test matrix
+
+Apply the new migration first, then sign in with real accounts.
+
+### A. Submit without a photograph
+
+1. Sign in as an active victim, volunteer, rescue team member, and administrator
+   in turn.
+2. Open `/missing-persons/new` from the directory button or the dashboard action.
+3. Leave **Photograph** empty and submit a valid report.
+4. Confirm the report is created, the detail page opens, and the placeholder is
+   shown on both the detail page and the directory card.
+5. Confirm `missing_persons.photo_path` is `NULL` for the new row.
+
+### B. Submit with a photograph
+
+1. Repeat the role check with a real JPG, PNG, and WebP file under 5 MB.
+2. Confirm the preview appears before submission.
+3. Submit and confirm the detail page and directory card show the photo.
+4. Confirm `photo_path` is set and the object exists under
+   `missing-person-photos/<reporter-uuid>/`.
+5. Copy the object path and try to open a public Storage URL without a signature;
+   confirm it is denied.
+6. Confirm the signed URL works for an active user and expires.
+
+### C. Validation and failure handling
+
+1. Try a `.txt` file renamed to `.png`; confirm the server rejects it.
+2. Try a file larger than 5 MB; confirm the server rejects it.
+3. As a pending or rejected account, confirm `/missing-persons/new` redirects to
+   `/account-status`.
+4. Confirm a direct insert as a pending account is denied by RLS.
+5. Confirm a direct insert with another user's `reporter_id` is denied.
+6. Confirm a direct update or delete on `missing_persons` is denied.
+7. Confirm the existing PB-14 search/filter and PB-15 mark-found/reopen flows
+   still work.
+
+## Migration instructions
+
+1. Open the Supabase project → **SQL Editor**.
+2. Paste the full contents of
+   `supabase/migrations/20261117000000_missing_person_photo_and_active_user_submission.sql`.
+3. Run it once. It is additive and does not rerun
+   `20261116000000_missing_person_management.sql`.
+4. Confirm the verification queries in `supabase/README.md` show the nullable
+   `photo_path` column, the private bucket, four storage policies, and the
+   `is_active_account` function.
+
+## Correction files
+
+| File | Change |
+| --- | --- |
+| `supabase/migrations/20261117000000_missing_person_photo_and_active_user_submission.sql` | New additive migration: `photo_path`, active-account helper/policies, private bucket, storage policies, widened status RPC. |
+| `lib/missing-persons/photos.ts` | New optional-photo validation, path building, upload, cleanup, and signed URL helpers. |
+| `lib/missing-persons/actions.ts` | Active-account submission, optional upload, insert cleanup, and updated error messages. |
+| `lib/missing-persons/data.ts` | Signed photo URLs for list and detail queries. |
+| `components/missing-persons/missing-person-photo.tsx` | New photo display with a no-photo placeholder. |
+| `components/missing-persons/missing-person-form.tsx` | Optional file input, preview, and validation feedback. |
+| `components/missing-persons/missing-person-card.tsx` | Photo/placeholder in search results. |
+| `app/(app)/missing-persons/page.tsx` | Report action for every active role. |
+| `app/(app)/missing-persons/new/page.tsx` | Active-account authorization. |
+| `app/(app)/missing-persons/[reportId]/page.tsx` | Photo/placeholder on the detail page. |
+| `app/(app)/admin/dashboard/page.tsx` | Report-missing-person action for administrators. |
+| `components/responder/responder-dashboard.tsx` | Report-missing-person action for responders. |
+| `types/database.ts` | Added nullable `photo_path`. |
+| `tests/missing-person-photo.test.ts` | New automated coverage for both submission paths. |
+| `tests/package.json` | Scopes the test directory to ESM. |
+| `package.json` | Added the `npm test` script. |
+| `tsconfig.json` | Enabled `allowImportingTsExtensions` for the test imports. |
+| `next.config.ts` | Raised the Server Action body limit to 6 MB for the 5 MB photo cap. |
+| `README.md` | Updated routes, behavior, scripts, testing, and security notes. |
+| `supabase/README.md` | Documented the new migration, photo column, bucket, policies, and lifecycle. |
+| `components/README.md` | Documented the photo component. |
+| `TESTING_REPORT.md` | Added this correction addendum. |
+
+## Remaining user actions
+
+1. Review and apply the new migration in Supabase.
+2. Run the manual matrix with real accounts for all four active roles, with and
+   without photos.
+3. Confirm Storage policies behave as expected for pending/rejected accounts and
+   cross-user paths.
+4. Approve Chunk 10/PB-16 separately when ready.
+
+---
+
+# Chunk 9 correction — Bangladesh local-time display and input
+
+**Date:** 16 November 2026
+
+**Scope:** Timestamp presentation only. Database timestamps stay `timestamptz`
+(UTC internally); no schema, migration, policy, or existing record changed.
+Chunk 10/PB-16 was not started.
+
+## Result summary
+
+| Check | Result |
+| --- | --- |
+| TypeScript (`tsc --noEmit`) | Pass |
+| ESLint (`eslint .`) | Pass |
+| Automated tests (`node --test tests`) | 19 passed, 0 failed |
+| Production build (`next build`) | Pass |
+
+## Behavior
+
+- All displayed timestamps now use `Asia/Dhaka` (Bangladesh Standard Time,
+  UTC+6) and end with the `BST` label instead of `UTC`.
+- `formatDateTime` and `formatRegistrationDate` keep explicit `timeZone`
+  settings, so server rendering is deterministic and there is no hydration
+  mismatch.
+- A missing-person `datetime-local` value is now interpreted as Bangladesh
+  wall-clock time before conversion to UTC for storage.
+- Impossible dates (for example 30 February) are still rejected, and the
+  existing five-minute future tolerance is preserved.
+
+## Changed files
+
+| File | Change |
+| --- | --- |
+| `lib/requests/format.ts` | Format in `Asia/Dhaka`; suffix `BST`. |
+| `lib/admin/format.ts` | Same timezone and label for registration dates. |
+| `lib/missing-persons/schemas.ts` | Parse `lastSeenAt` as UTC+6; guard the future check against invalid input. |
+| `components/missing-persons/missing-person-form.tsx` | Hint now says “Use Bangladesh time (BST, UTC+6)”. |
+| `tests/missing-person-timestamp.test.ts` | New conversion and input-parsing coverage. |
+| `TESTING_REPORT.md` | Added this addendum. |

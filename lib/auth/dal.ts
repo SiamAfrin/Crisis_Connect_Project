@@ -117,6 +117,20 @@ export async function requireActiveRole(
 }
 
 /**
+ * Requires an authenticated user with an active account. Used by pages that
+ * are shared by every active role, such as the missing person directory.
+ */
+export async function requireActiveAccount(): Promise<ProfileContext> {
+  const context = await requireProfile();
+
+  if (context.profile.account_status !== "active") {
+    redirect("/account-status");
+  }
+
+  return context;
+}
+
+/**
  * Server-side authorization for the responder dashboards. Only active
  * volunteers and rescue team members may pass.
  */

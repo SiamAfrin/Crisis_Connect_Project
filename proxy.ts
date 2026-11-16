@@ -73,5 +73,6 @@ export const config = {
     "/volunteer/:path*",
     "/rescue/:path*",
     "/admin/:path*",
+    "/missing-persons/:path*",
   ],
 };

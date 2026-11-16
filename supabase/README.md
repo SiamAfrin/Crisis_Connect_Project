@@ -24,6 +24,8 @@ supabase/migrations/20261109000000_admin_request_review.sql
 supabase/migrations/20261110000000_responder_acceptance_assignment.sql
 supabase/migrations/20261112000000_single_responder_assignment.sql
 supabase/migrations/20261115000000_mission_status_updates.sql
+supabase/migrations/20261116000000_missing_person_management.sql
+supabase/migrations/20261117000000_missing_person_photo_and_active_user_submission.sql
 ```
 
 The first creates the schema, policies, and grants. The second adds the
@@ -33,7 +35,12 @@ victim-contact policy for accepted responders, and the acceptance and assignment
 functions. The fifth is a corrective migration that limits each request to one
 assigned responder, adds row locking to the acceptance and assignment functions,
 and restricts victim contact to the assigned responder. The sixth adds the
-mission status update function used by assigned responders.
+mission status update function used by assigned responders. The seventh adds
+missing person reports, their RLS policies, and the status update function. The
+eighth is an additive correction that adds optional missing person photos, a
+private Storage bucket and its policies, an `is_active_account` helper, and
+widened report submission and status updates from active victims to every active
+registered role.
 
 ### Option A — Supabase Dashboard
 
@@ -81,7 +88,8 @@ where schemaname = 'public'
     'profiles',
     'emergency_requests',
     'emergency_assignments',
-    'emergency_acceptances'
+    'emergency_acceptances',
+    'missing_persons'
   )
 order by tablename;
 
@@ -97,7 +105,8 @@ where schemaname = 'public'
     'profiles',
     'emergency_requests',
     'emergency_assignments',
-    'emergency_acceptances'
+    'emergency_acceptances',
+    'missing_persons'
   )
 order by tablename, indexname;
 
@@ -109,15 +118,40 @@ where proname in (
   'accept_emergency_request',
   'assign_emergency_responder',
   'list_assigned_request_ids',
-  'update_mission_status'
+  'update_mission_status',
+  'update_missing_person_status',
+  'is_active_account'
 )
 order by proname;
+
+select column_name, is_nullable, data_type
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'missing_persons'
+  and column_name = 'photo_path';
+
+select id, name, public, file_size_limit, allowed_mime_types
+from storage.buckets
+where id = 'missing-person-photos';
+
+select policyname, cmd
+from pg_policies
+where schemaname = 'storage'
+  and tablename = 'objects'
+  and policyname like 'missing_person_photos_%'
+order by policyname;
 ```
 
-The function result should return six rows with `prosecdef = true`, confirming
+The function result should return eight rows with `prosecdef = true`, confirming
 that the administrator approval, request review, request acceptance, responder
-assignment, assigned-request lookup, and mission status update functions exist
-and are `SECURITY DEFINER`.
+assignment, assigned-request lookup, mission status update, missing person
+status update, and active-account helper functions exist and are `SECURITY
+DEFINER`.
+
+The column check should return one nullable `photo_path` text column. The bucket
+check should return `missing-person-photos` with `public = false`, a 5,242,880
+byte limit, and the three image MIME types. The storage policy check should
+return four `missing_person_photos_*` policies.
 
 Then call the application health route:
 
@@ -234,6 +268,23 @@ intentionally blocked. A missing table still reports `migration_required`.
 - Execute is granted to `authenticated`; authenticated users have no direct
   update grant on `emergency_assignments`.
 
+### `update_missing_person_status(target_report_id, new_status)`
+
+- `SECURITY DEFINER` function that marks a missing person report found or
+  reopens it as missing.
+- Requires an active reporter in any role, or an active administrator, and the
+  caller must be the reporter unless they are an administrator. The caller is
+  derived from `auth.uid()`.
+- Locks the report row and accepts only `missing` or `found`. The reporter can
+  change `missing` → `found`; only an administrator can change `found` →
+  `missing`.
+- Marks the report found with `resolved_at = now()` and
+  `resolved_by = auth.uid()`, and clears both fields when reopening.
+- Raises `42501` for callers who are not the reporter or an administrator,
+  `P0002` for missing reports, and `22023` for invalid or repeated transitions.
+- Execute is granted to `authenticated`; authenticated users have no direct
+  update or delete grant on `missing_persons`.
+
 ### `emergency_requests`
 
 - UUID `request_id`.
@@ -266,6 +317,24 @@ intentionally blocked. A missing table still reports `migration_required`.
 - Indexed by `request_id` and `responder_id`.
 - Responders read only their own acceptances; administrators read all of them.
   There is no victim access to acceptance rows.
+
+### `missing_persons`
+
+- UUID `report_id`.
+- Foreign keys to the reporting profile and the resolving profile.
+- Statuses: `missing`, `found`.
+- Genders: `female`, `male`, `other`, `unknown`.
+- `age` is optional and must be between 0 and 120.
+- `photo_path` is nullable and stores the private Storage object path for an
+  optional photograph. Reports without a photo keep it `NULL`.
+- `last_seen_at` cannot be more than five minutes after `created_at`.
+- Found reports require both `resolved_at` and `resolved_by`.
+- Indexed by reporter and creation time, status and creation time, creation
+  time, and resolving profile.
+- Reports are created only through the authenticated insert grant, which covers
+  the report details, reporter, and optional `photo_path` but not status or
+  resolution fields.
+- Status changes are made only through `update_missing_person_status`.
 
 ## 6. RLS notes
 
@@ -302,6 +371,16 @@ intentionally blocked. A missing table still reports `migration_required`.
   `accept_emergency_request`, which derives the responder from `auth.uid()` and
   re-checks active responder status and request approval. Authenticated users
   have no direct insert, update, or delete grant.
+- `missing_persons`: active victims, active responders, and active administrators
+  read reports. Any active registered user can insert their own report, and new
+  reports must start missing and unresolved. Pending and rejected accounts
+  cannot insert. Authenticated users have no direct update or delete grant. The
+  active reporter or an administrator marks a report found through
+  `update_missing_person_status`; only administrators can reopen it.
+- `storage.objects` for `missing-person-photos`: the bucket is private. Active
+  users may upload only under their own `auth.uid()` folder, active users may
+  read objects so the server can create signed URLs, and the uploader or an
+  administrator may delete an object. No anonymous access is granted.
 
 ## 7. Profile lifecycle
 
@@ -415,7 +494,46 @@ additional migration.
   assignment page shows the current status and acceptance time.
 - No service-role key is used.
 
-## 12. Operational note
+## 12. Missing person lifecycle
+
+- Any active registered user (victim, volunteer, rescue team member, or
+  administrator) can open `/missing-persons/new` and submit a report. Pending
+  and rejected accounts are redirected to `/account-status`.
+- The Server Action derives the reporter from the session and never accepts it
+  from the form.
+- `status`, `resolved_at`, and `resolved_by` are not part of the authenticated
+  insert column grant, so a new report always starts missing and unresolved.
+- The optional photo is validated on the server: allowed MIME type, file
+  signature, and a 5 MB limit. A report with no photo inserts `photo_path = NULL`.
+- The photo is uploaded first. If the report insert then fails, the Server Action
+  removes the uploaded object. If the upload fails, the report is not inserted
+  and the form offers a retry or a submission without a photo.
+- Active victims, responders, and administrators can read the directory and
+  search by name or last seen location. Pending and rejected accounts cannot.
+- The data layer signs `photo_path` values with 10-minute URLs. A signing failure
+  shows the placeholder instead of failing the page.
+- Reporter contact details come from the reporter's profile. Profile RLS returns
+  those details only to the reporter and administrators.
+- The active reporter or an administrator marks a report found through
+  `update_missing_person_status`. Only administrators can reopen a found report.
+- The function locks the report row, records the resolver and time when marking
+  found, and clears both fields when reopening.
+- No service-role key is used.
+
+## 13. Missing person photo storage
+
+- The `missing-person-photos` bucket is private (`public = false`) with a
+  5,242,880 byte limit and `image/jpeg`, `image/png`, and `image/webp` MIME types.
+- Object paths are `<auth.uid()>/<uuid>.<extension>`.
+- Insert requires an active account and the caller's own folder. Select requires
+  an active account. Delete is limited to the uploader's own folder or an active
+  administrator.
+- The application never stores or displays a public URL. It creates signed URLs
+  on the server for active users.
+- Apply the photo migration after `20261116000000_missing_person_management.sql`.
+  It is additive and does not rerun the earlier migration.
+
+## 14. Operational note
 
 No service-role key is configured for this project. The application therefore
 cannot delete Auth users or bypass RLS from server code. If a test or abandoned

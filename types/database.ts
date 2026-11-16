@@ -219,6 +219,72 @@ export type Database = {
           },
         ];
       };
+      missing_persons: {
+        Row: {
+          report_id: string;
+          reporter_id: string;
+          full_name: string;
+          age: number | null;
+          gender: Database["public"]["Enums"]["missing_person_gender"];
+          description: string;
+          last_seen_location: string;
+          last_seen_at: string;
+          photo_path: string | null;
+          status: Database["public"]["Enums"]["missing_person_status"];
+          created_at: string;
+          updated_at: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
+        };
+        Insert: {
+          report_id?: string;
+          reporter_id: string;
+          full_name: string;
+          age?: number | null;
+          gender?: Database["public"]["Enums"]["missing_person_gender"];
+          description: string;
+          last_seen_location: string;
+          last_seen_at: string;
+          photo_path?: string | null;
+          status?: Database["public"]["Enums"]["missing_person_status"];
+          created_at?: string;
+          updated_at?: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+        };
+        Update: {
+          report_id?: string;
+          reporter_id?: string;
+          full_name?: string;
+          age?: number | null;
+          gender?: Database["public"]["Enums"]["missing_person_gender"];
+          description?: string;
+          last_seen_location?: string;
+          last_seen_at?: string;
+          photo_path?: string | null;
+          status?: Database["public"]["Enums"]["missing_person_status"];
+          created_at?: string;
+          updated_at?: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "missing_persons_reporter_id_fkey";
+            columns: ["reporter_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "missing_persons_resolved_by_fkey";
+            columns: ["resolved_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -278,6 +344,13 @@ export type Database = {
         };
         Returns: Database["public"]["Enums"]["assignment_status"];
       };
+      update_missing_person_status: {
+        Args: {
+          target_report_id: string;
+          new_status: Database["public"]["Enums"]["missing_person_status"];
+        };
+        Returns: Database["public"]["Enums"]["missing_person_status"];
+      };
     };
     Enums: {
       user_role: "victim" | "volunteer" | "rescue_team_member" | "administrator";
@@ -292,6 +365,8 @@ export type Database = {
         | "declined"
         | "cancelled"
         | "completed";
+      missing_person_status: "missing" | "found";
+      missing_person_gender: "female" | "male" | "other" | "unknown";
     };
     CompositeTypes: {
       [_ in never]: never;

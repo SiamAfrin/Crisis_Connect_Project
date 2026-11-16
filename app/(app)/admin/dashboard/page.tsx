@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Notice } from "@/components/ui/form";
+import { buttonSecondary } from "@/components/ui/button";
 import { ArrowRightIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import {
@@ -10,6 +11,7 @@ import {
   getResponderWorkflowCounts,
 } from "@/lib/admin/data";
 import { requireActiveRole } from "@/lib/auth/dal";
+import { getMissingPersonCounts } from "@/lib/missing-persons/data";
 
 export const metadata: Metadata = {
   title: "Administrator dashboard",
@@ -22,17 +24,23 @@ export const instant = false;
 export default async function AdminDashboardPage() {
   const { supabase, profile } = await requireActiveRole("administrator");
 
-  const [responderResult, requestResult, workflowResult] = await Promise.all([
-    getResponderCounts(supabase),
-    getEmergencyRequestCounts(supabase),
-    getResponderWorkflowCounts(supabase),
-  ]);
+  const [responderResult, requestResult, workflowResult, missingPersonResult] =
+    await Promise.all([
+      getResponderCounts(supabase),
+      getEmergencyRequestCounts(supabase),
+      getResponderWorkflowCounts(supabase),
+      getMissingPersonCounts(supabase),
+    ]);
 
   const error =
-    responderResult.error ?? requestResult.error ?? workflowResult.error;
+    responderResult.error ??
+    requestResult.error ??
+    workflowResult.error ??
+    missingPersonResult.error;
   const counts = responderResult.counts;
   const requestCounts = requestResult.counts;
   const workflowCounts = workflowResult.counts;
+  const missingPersonCounts = missingPersonResult.counts;
 
   const queues = [
     {
@@ -50,6 +58,11 @@ export default async function AdminDashboardPage() {
       label: "Responder assignments",
       detail: `${workflowCounts.accepted} accepted · ${workflowCounts.assigned} assigned`,
     },
+    {
+      href: "/missing-persons",
+      label: "Missing persons",
+      detail: `${missingPersonCounts.missing} active · ${missingPersonCounts.found} found`,
+    },
   ];
 
   return (
@@ -57,6 +70,11 @@ export default async function AdminDashboardPage() {
       <PageHeader
         title="Dashboard"
         description={`Signed in as ${profile.full_name}. Review registrations and requests, then assign responders.`}
+        actions={
+          <Link href="/missing-persons/new" className={buttonSecondary}>
+            Report missing person
+          </Link>
+        }
       />
 
       {error ? (

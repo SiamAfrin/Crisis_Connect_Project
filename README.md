@@ -7,7 +7,9 @@ approved requests, and administrators assign one accepted responder to each
 request. The assigned responder then accepts and completes the mission, and
 administrators see the updated mission status. Victims can follow the current
 status of their own requests from review through responder assignment and
-mission completion.
+mission completion. Any active registered user can report a missing person with an
+optional photograph, and active authenticated users can search those reports and
+see whether a person has been found.
 
 ## Stack
 
@@ -71,9 +73,12 @@ mission completion.
 | `/victim/requests` | Active victim | List and track the victim's own requests |
 | `/victim/requests/new` | Active victim | Submit an emergency request |
 | `/victim/requests/[requestId]` | Active victim | Request details and current status |
+| `/missing-persons` | Active authenticated users | Search and review missing person reports |
+| `/missing-persons/new` | Active authenticated users | Report a missing person, with an optional photograph |
+| `/missing-persons/[reportId]` | Active authenticated users | Missing person details and status |
 | `/volunteer/dashboard` | Active volunteer | Accept approved requests, update mission status, and view own assignments |
 | `/rescue/dashboard` | Active rescue team member | Accept approved requests, update mission status, and view own assignments |
-| `/admin/dashboard` | Active administrator | Administrator dashboard with approval, request, and assignment summaries |
+| `/admin/dashboard` | Active administrator | Administrator dashboard with approval, request, assignment, and missing person summaries |
 | `/admin/responders` | Active administrator | Review and approve or reject responder registrations |
 | `/admin/requests` | Active administrator | Review and approve or reject emergency requests |
 | `/admin/assignments` | Active administrator | Assign accepted responders to approved requests |
@@ -220,6 +225,49 @@ mission completion.
   administrator and responder views, so it stays consistent with review,
   assignment, and mission updates.
 
+## Missing person behavior
+
+- Any **active registered user** (victim, volunteer, rescue team member, or
+  administrator) can report a missing person. Pending and rejected accounts
+  cannot open the form or call the submission Server Action.
+- The form collects the person's full name, optional age, gender, description,
+  last seen location, and last seen time. A photograph is optional.
+- Photographs are optional. JPG, PNG, and WebP files up to 5 MB are accepted. The
+  server checks the declared MIME type, the file signature, and the size before
+  uploading, so a report submits successfully with or without a photo. The
+  Server Action body limit is raised to 6 MB so the 5 MB cap can reach server
+  validation.
+- Photos are stored in the private `missing-person-photos` Storage bucket under
+  the reporter's own folder. The database stores a nullable `photo_path`. The
+  application never creates a public URL; the directory and detail page request
+  short-lived signed URLs for active users.
+- If an upload succeeds but the report insert fails, the Server Action removes
+  the uploaded object again. A Storage signing failure degrades to the
+  placeholder rather than failing the directory.
+- Reports without a photo show a neutral placeholder on the list and detail
+  pages.
+- The server always sets the reporter to the signed-in user and starts the
+  report as **Missing**. The form cannot set the reporter, status, or resolution
+  fields.
+- Active victims, active volunteers, active rescue team members, and active
+  administrators can search and open missing person reports. Pending and
+  rejected accounts cannot.
+- The directory searches by full name or last seen location and filters by
+  **Missing**, **Found**, or **All**. Missing reports are the default view.
+- The reporter can mark their own report **Found**. Administrators can mark any
+  report **Found** and can reopen a found report as **Missing**.
+- Marking a report found records the resolving profile and time. Reopening
+  clears both fields.
+- Status changes are applied by the `update_missing_person_status`
+  `SECURITY DEFINER` function, which re-checks the caller and locks the report
+  row. Authenticated users have no direct update or delete grant on
+  `missing_persons`.
+- Reporter contact details come from the reporter's profile and are shown only
+  to the reporter and administrators. Other active users can see the report
+  details but not the reporter's name or phone.
+- Missing person reports do not create emergency requests, assignments, or
+  missions. They are a separate community-search record.
+
 ## Protected routes and authorization
 
 Protection is layered:
@@ -227,14 +275,15 @@ Protection is layered:
 1. `proxy.ts` refreshes the Supabase session cookie and performs an optimistic
    redirect to `/login` for unauthenticated access to protected paths.
 2. The protected layout requires an authenticated user with a profile.
-3. Each role dashboard and request page independently requires the correct
-   active role.
+3. Each role dashboard, request page, and missing person page independently
+   requires the correct active role or an active account.
 4. Server Actions re-check the session and active role before profile updates,
    request submission, responder review decisions, request acceptance, responder
-   assignment, or mission status updates.
+   assignment, mission status updates, or missing person report submission and
+   status updates.
 5. RLS policies and column-level grants block direct privilege changes,
-   cross-victim request access, and other responders' acceptance or assignment
-   rows.
+   cross-victim request access, cross-reporter missing person changes, and other
+   responders' acceptance or assignment rows.
 
 The UI is never the only authorization layer. Hiding a navigation link is not
 treated as access control.
@@ -259,10 +308,14 @@ app/
     volunteer/dashboard/page.tsx  Volunteer accept, mission status, and assignment dashboard
     rescue/dashboard/page.tsx     Rescue team accept, mission status, and assignment dashboard
     admin/
-      dashboard/page.tsx          Administrator dashboard with approval, request, and assignment summaries
+      dashboard/page.tsx          Administrator dashboard with approval, request, assignment, and missing person summaries
       responders/page.tsx         Responder approval queue
       requests/page.tsx           Emergency request review queue
       assignments/page.tsx        Accepted-request assignment queue
+    missing-persons/
+      page.tsx                    Missing person search and list
+      new/page.tsx                Missing person report form
+      [reportId]/page.tsx         Missing person details and status
   api/health/supabase/route.ts    Supabase health check
   globals.css                     Tailwind import and base theme
   layout.tsx                      Root layout and metadata
@@ -272,6 +325,7 @@ components/
   app-shell.tsx                   Protected header, navigation, and logout
   admin/                          Responder approval, request review, and assignment cards
   auth/                           Login and registration forms
+  missing-persons/                Missing person form, photo, cards, status badge, and status controls
   profile/                        Profile edit form
   requests/                       Request forms, victim/responder cards, victim status panels, accept and mission status actions, and badges
   responder/                      Shared responder dashboard
@@ -289,6 +343,11 @@ lib/
     profile.ts                    Profile read and recovery helpers
     routes.ts                     Role destinations and safe redirects
     schemas.ts                    Zod validation schemas
+  missing-persons/
+    actions.ts                    Missing person submission and status Server Actions
+    data.ts                       Missing person queries, signed photo URLs, and counts
+    photos.ts                     Optional photo validation, Storage upload, cleanup, and signed URLs
+    schemas.ts                    Missing person validation
   requests/
     actions.ts                    Emergency request submission, acceptance, and mission status Server Actions
     data.ts                       Victim, responder workspace, and assignment queries
@@ -302,7 +361,9 @@ lib/
     health.ts                     Connection and schema checks
     server.ts                     Request-scoped server Supabase client
 proxy.ts                          Session refresh and optimistic redirects
-TESTING_REPORT.md                 Chunk 6 testing report and manual test matrix
+tests/
+  missing-person-photo.test.ts    Optional-photo validation and both submission paths
+TESTING_REPORT.md                 Chunks 6–9 testing report and manual test matrix
 supabase/
   migrations/
     20261107000000_initial_schema.sql
@@ -311,6 +372,8 @@ supabase/
     20261110000000_responder_acceptance_assignment.sql
     20261112000000_single_responder_assignment.sql
     20261115000000_mission_status_updates.sql
+    20261116000000_missing_person_management.sql
+    20261117000000_missing_person_photo_and_active_user_submission.sql
   README.md                       Migration, auth settings, and RLS notes
 types/
   database.ts                     Typed Supabase database schema
@@ -325,17 +388,21 @@ types/
 | `npm run start`     | Run the production build                     |
 | `npm run lint`      | Run ESLint                                   |
 | `npm run typecheck` | Run TypeScript without emitting files        |
+| `npm test`          | Run the Node test runner over `tests/`       |
 
 ## Testing
 
-No automated test runner is configured. Verification uses `npm run typecheck`,
+`npm test` runs the Node test runner over `tests/` using native TypeScript type
+stripping (Node 22.6 or newer; this project was verified on Node 26). The current
+suite covers optional-photo validation and both missing person submission paths
+(with and without a photo). Verification also uses `npm run typecheck`,
 `npm run lint`, and `npm run build`, plus the manual and live checks recorded in
 [`TESTING_REPORT.md`](TESTING_REPORT.md).
 
 ## Security notes
 
 - RLS is enabled on `profiles`, `emergency_requests`, `emergency_assignments`,
-  and `emergency_acceptances`.
+  `emergency_acceptances`, and `missing_persons`.
 - Public registration cannot create an administrator profile.
 - Volunteers and rescue team members cannot self-activate. Authenticated users
   have no direct update grant on `account_status`.
@@ -370,4 +437,19 @@ No automated test runner is configured. Verification uses `npm run typecheck`,
   `pending` → `accepted` → `completed`.
 - Victim contact details are readable by a responder only after that responder
   is assigned to the victim's request.
+- Any active registered user can insert only their own missing person reports,
+  and new reports must start missing and unresolved. Pending and rejected
+  accounts cannot insert. Authenticated users have no direct update or delete
+  grant on `missing_persons`.
+- Active victims, responders, and administrators can read missing person
+  reports. Reporter contact details remain protected by profile RLS and are
+  visible only to the reporter and administrators.
+- Missing person photographs live in the private `missing-person-photos` Storage
+  bucket. Uploads must use the caller's own folder, reads are limited to active
+  accounts, and the application only displays short-lived signed URLs. The
+  uploader can remove their own object; administrators can remove any
+  missing-person photo.
+- Missing person status changes are applied by `update_missing_person_status`,
+  which requires an active reporter or an active administrator and locks the
+  report row. Only administrators can reopen a found report.
 - The Supabase service role key is not used by the application.

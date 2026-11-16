@@ -41,6 +41,7 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/volunteer",
   "/rescue",
   "/admin",
+  "/missing-persons",
 ] as const;
 
 /**

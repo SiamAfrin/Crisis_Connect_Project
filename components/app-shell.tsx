@@ -47,6 +47,11 @@ function buildNavItems(profile: Tables<"profiles">): AppNavItem[] {
         },
       );
     }
+
+    items.push({
+      href: "/missing-persons",
+      label: "Missing persons",
+    });
   } else {
     items.push({
       href: "/account-status",
